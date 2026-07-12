@@ -2,7 +2,8 @@
 
 **Status:** Active · walking skeleton shipped (0.1.0)
 **Owner:** Raf
-**Companion:** the integration memo (design doc) and `SPEC_HECATE_SPARTAN.md`
+**Companion:** the integration memo (design doc) and
+[`specs/SPEC_HECATE_SPARTAN.md`](../specs/SPEC_HECATE_SPARTAN.md)
 
 The desk-by-desk roadmap that turns the 0.1.0 skeleton into the working
 commons. Each desk is a vertical slice: command + event + handler +
