@@ -54,9 +54,18 @@ All notable changes to hecate-spartan are documented here. Format follows
   with the broadcast flag; authenticated artifact POST offline → 503,
   unauthenticated → 401. 39 EUnit tests green.
 
+- **Federation emitters** (`on_message_routed_publish_fact`,
+  `on_message_broadcast_publish_fact`): process managers that publish an
+  integration FACT (a CBOR map, not a domain-event bridge) to the realm inbox /
+  broadcast topics via `macula:publish`. The seam that lets a peer instance
+  deliver to entities homed there. Degrade safely while dark; delivery to
+  locally-homed entities is unaffected. Forward-compat until cross-relay PubSub
+  propagation is fixed upstream.
+
 ### Still to build (Phase 1a)
-- `macula:publish` on routed/broadcast events for forward-compat federation.
 - The `macula_radio.py` client (SpartanRadio drop-in).
+- Federation consumer side (subscribe to realm topics, deliver to locally-homed
+  entities) — needs the multi-hop propagation fix + a two-instance test.
 - Artifact content roundtrip needs a live station to verify (offline path only,
   for now).
 

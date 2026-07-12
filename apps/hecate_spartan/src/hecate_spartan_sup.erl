@@ -38,6 +38,12 @@ init([]) ->
         %% Projection: message_broadcast_v1 -> every entity's inbox.
         projection(message_broadcast_v1_to_inboxes),
 
+        %% Federation emitters (PMs): publish integration facts to the mesh so
+        %% peer instances can deliver to entities homed there. Degrade safely
+        %% while dark. Forward-compat until cross-relay PubSub is fixed.
+        projection(on_message_routed_publish_fact),
+        projection(on_message_broadcast_publish_fact),
+
         %% Entity-facing HTTP ingress + /health listener. Depends on identity
         %% (UCAN minting), the registry, and the inbox, so it starts last.
         worker(hecate_spartan_ingress)
