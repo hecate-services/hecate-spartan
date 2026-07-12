@@ -32,7 +32,7 @@ RUN tar xf /tmp/release.tar.gz && rm /tmp/release.tar.gz
 # Realm service-principal cert mounts here; station socket under /run/macula.
 VOLUME ["/etc/hecate/secrets", "/var/lib/hecate-spartan"]
 
-EXPOSE 8470
+EXPOSE 8470 8471
 
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
     CMD wget --spider -q http://localhost:8470/health || exit 1

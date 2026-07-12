@@ -29,7 +29,10 @@ new(Name, Did, PubKey, At) ->
 -spec to_map(register_entity_v1()) -> map().
 to_map(#register_entity_v1{entity_name = Name, did = Did,
                           pubkey = PubKey, registered_at = At}) ->
-    #{entity_name => Name, did => Did, pubkey => PubKey, registered_at => At}.
+    %% command_type (binary) must ride in the payload — the aggregate matches
+    %% on it; evoq passes the payload to execute/2 unchanged.
+    #{command_type => <<"register_entity">>,
+      entity_name => Name, did => Did, pubkey => PubKey, registered_at => At}.
 
 -spec from_map(map()) -> {ok, register_entity_v1()} | {error, term()}.
 from_map(#{entity_name := Name, did := Did, pubkey := PubKey,

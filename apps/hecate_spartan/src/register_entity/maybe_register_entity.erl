@@ -10,8 +10,6 @@
 
 -dialyzer({nowarn_function, [dispatch/1]}).
 
--include_lib("evoq/include/evoq.hrl").
-
 -spec handle_from_map(map()) -> {ok, [map()]} | {error, term()}.
 handle_from_map(#{entity_name := Name, did := Did, pubkey := PubKey} = Payload) ->
     At = maps:get(registered_at, Payload, erlang:system_time(millisecond)),
@@ -36,18 +34,17 @@ handle(Command) ->
     {ok, non_neg_integer(), [map()]} | {error, term()}.
 dispatch(Cmd) ->
     #{did := Did} = CmdMap = register_entity_v1:to_map(Cmd),
-    EvoqCmd = #evoq_command{
-        command_type = register_entity,
-        aggregate_type = entity_aggregate,
-        aggregate_id = <<"entity-", Did/binary>>,
-        payload = CmdMap#{command_type => register_entity},
-        metadata = #{timestamp => erlang:system_time(millisecond)}
-    },
-    evoq_dispatcher:dispatch(EvoqCmd, #{
-        store_id => hecate_spartan_store,
-        adapter => reckon_evoq_adapter,
-        consistency => eventual
-    }).
+    EvoqCmd = evoq_command:new(
+        register_entity,
+        entity_aggregate,
+        entity_aggregate:stream_id(Did),
+        CmdMap,
+        #{timestamp => erlang:system_time(millisecond)}
+    ),
+    Opts = #{store_id => hecate_spartan_store,
+             adapter => reckon_evoq_adapter,
+             consistency => eventual},
+    evoq_command_router:dispatch(EvoqCmd, Opts).
 
 %% Internal — Ed25519 public keys are 32 raw bytes.
 validate(Name, Did, PubKey) ->

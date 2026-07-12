@@ -9,7 +9,9 @@
 [
     {hecate_spartan, [
         {data_dir,       "${HECATE_DATA_DIR}"},
-        {event_store_id, hecate_spartan_store}
+        {event_store_id, hecate_spartan_store},
+        {ingress_port,   8471},
+        {health_port,    8470}
     ]},
 
     {hecate_om, [

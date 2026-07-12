@@ -24,7 +24,8 @@
     { "name": "spartan.receive",         "version": 1, "status": "planned" }
   ],
   "ports": {
-    "health": 8470
+    "health": 8470,
+    "api": 8471
   },
   "volumes": {
     "secrets": "/etc/hecate/secrets/hecate-spartan",

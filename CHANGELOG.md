@@ -14,14 +14,26 @@ All notable changes to hecate-spartan are documented here. Format follows
 - **`register_entity` write-side slice**: command, event, handler, aggregate,
   and state (evoq). Proof-of-possession is an ingress concern; the event never
   stores the signature.
-- EUnit: 13 tests (UCAN roundtrip, entity-sig verify + forgery rejection,
-  realm-scoped caps, handler validation). `rebar3 compile` + `rebar3 eunit`
-  green against the full dependency graph.
+- **Entity registry read model** (`hecate_spartan_entities`, ETS) + its
+  projection (`entity_registered_v1_to_entities`), wired to the evoq
+  subscription. Discovery queries: `get/1`, `all/0`, `count/0`.
+- **Ingress** (`hecate_spartan_ingress` + `register_entity_api`): `POST
+  /v1/register` — verifies the entity's signature proof, dispatches
+  register_entity, returns a minted UCAN. Also serves `/health` on the
+  loopback port (hecate_om ships the handler but starts no listener, so the
+  container HEALTHCHECK was dead until now).
+- Uses the current evoq 1.23 command path (`evoq_command:new/5` +
+  `evoq_command_router:dispatch/2`); the older `evoq_dispatcher` reference was
+  removed upstream.
+- **Verified end-to-end**: booting the service and driving `POST /v1/register`
+  over HTTP runs the full path (sig → dispatch → reckon_db event → projection
+  → registry) and returns a valid UCAN; forged signatures get 401; `/health`
+  returns 200. 24 EUnit tests green.
 
-### Still skeleton
-- No ingress (cowboy `/v1/*`) and no projection wiring yet — the registry
-  read model, `route`/`broadcast`/`share`/`receive` slices, and mesh publish
-  are the next increments (Phase 1a).
+### Still to build (Phase 1a)
+- `route_message` / `broadcast_message` / `share_artifact` / `receive` (SSE)
+  slices, the in-process inbox, and `macula:publish` for forward-compat
+  federation. Then the `macula_radio.py` client.
 
 ## [0.1.0] - 2026-07-12
 

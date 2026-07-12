@@ -29,6 +29,9 @@ Volume=/run/macula:/run/macula:Z
 # Health endpoint (loopback only, for podman HEALTHCHECK).
 PublishPort=127.0.0.1:8470:8470
 
+# Entity-facing API (public — Spartan entities connect here over the network).
+PublishPort=8471:8471
+
 # Run as the dedicated `hecate` service user, never root.
 User=hecate
 Group=hecate

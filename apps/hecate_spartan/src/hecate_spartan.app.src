@@ -15,7 +15,10 @@
         %% On-disk root for this service's reckon-db store. sys.config.src
         %% overrides from ${HECATE_DATA_DIR} at boot.
         {data_dir,       "/var/lib/hecate-spartan"},
-        {event_store_id, hecate_spartan_store}
+        {event_store_id, hecate_spartan_store},
+        %% Entity-facing HTTP API (public) and the loopback /health listener.
+        {ingress_port,   8471},
+        {health_port,    8470}
     ]},
     {modules, []},
     {licenses, ["Apache-2.0"]},
