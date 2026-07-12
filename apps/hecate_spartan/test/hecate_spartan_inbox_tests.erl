@@ -29,6 +29,31 @@ inbox_flow_test() ->
 
     gen_server:stop(Pid).
 
+dedup_test() ->
+    {ok, Pid} = hecate_spartan_inbox:start_link(),
+    Did = <<"did:key:d">>,
+    M = #{msg_id => <<"dup1">>, from => <<"z">>, body => <<"b">>, sent_at => 1},
+
+    %% Same {recipient, msg_id} delivered twice: queued once only.
+    ok = hecate_spartan_inbox:deliver(Did, M),
+    ok = hecate_spartan_inbox:deliver(Did, M),
+    timer:sleep(50),
+    ?assertEqual(1, length(hecate_spartan_inbox:pending(Did))),
+
+    gen_server:stop(Pid).
+
+broadcast_fanout_survives_dedup_test() ->
+    {ok, Pid} = hecate_spartan_inbox:start_link(),
+    %% One msg_id, two recipients (broadcast): both must queue — dedup is
+    %% per recipient, not global.
+    B = #{msg_id => <<"bc1">>, from => <<"z">>, body => <<"all">>, sent_at => 1},
+    ok = hecate_spartan_inbox:deliver(<<"did:key:x">>, B),
+    ok = hecate_spartan_inbox:deliver(<<"did:key:y">>, B),
+    timer:sleep(50),
+    ?assertEqual(1, length(hecate_spartan_inbox:pending(<<"did:key:x">>))),
+    ?assertEqual(1, length(hecate_spartan_inbox:pending(<<"did:key:y">>))),
+    gen_server:stop(Pid).
+
 isolation_test() ->
     {ok, Pid} = hecate_spartan_inbox:start_link(),
     ok = hecate_spartan_inbox:deliver(<<"did:key:a">>,

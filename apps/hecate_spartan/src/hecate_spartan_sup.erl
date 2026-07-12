@@ -50,6 +50,11 @@ init([]) ->
         %% Projection: message_broadcast_v1 -> every entity's inbox.
         projection(message_broadcast_v1_to_inboxes),
 
+        %% Federation consumer: subscribe to spartan/broadcast + this instance's
+        %% entity inbox topics, deliver received messages to the local inbox.
+        %% Depends on the inbox + local registry, so it starts after both.
+        worker(federation_inbox),
+
         %% Federation emitters (PMs): publish integration facts to the mesh so
         %% peer instances can deliver to entities homed there. Degrade safely
         %% while dark. Forward-compat until cross-relay PubSub is fixed.

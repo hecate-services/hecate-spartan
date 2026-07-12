@@ -14,8 +14,12 @@
 -record(st, {
     queues = #{} :: #{binary() => [map()]},      %% did => reversed msg list
     subs   = #{} :: #{binary() => [pid()]},       %% did => receiver pids
-    mons   = #{} :: #{reference() => {binary(), pid()}}
+    mons   = #{} :: #{reference() => {binary(), pid()}},
+    seen   = #{} :: #{{binary(), binary()} => true} %% {did, msg_id} delivered
 }).
+
+%% Bound on the dedup set before a crude flush (per-recipient msg_id keys).
+-define(SEEN_MAX, 20000).
 
 start_link() ->
     gen_server:start_link({local, ?MODULE}, ?MODULE, [], []).
@@ -57,14 +61,10 @@ handle_call(_Req, _From, St) ->
     {reply, {error, unknown_call}, St}.
 
 handle_cast({deliver, ToDid, Msg}, St) ->
-    case maps:get(ToDid, St#st.subs, []) of
-        [] ->
-            Q = maps:update_with(ToDid, fun(L) -> [Msg | L] end, [Msg],
-                                 St#st.queues),
-            {noreply, St#st{queues = Q}};
-        Pids ->
-            _ = [P ! {spartan_msg, Msg} || P <- Pids],
-            {noreply, St}
+    MsgId = maps:get(msg_id, Msg, undefined),
+    case is_dup(ToDid, MsgId, St) of
+        true  -> {noreply, St};
+        false -> {noreply, do_deliver(ToDid, Msg, mark_seen(ToDid, MsgId, St))}
     end;
 handle_cast({unsubscribe, Did, Pid}, St) ->
     {noreply, remove_sub(Did, Pid, St)};
@@ -81,6 +81,33 @@ handle_info(_Info, St) ->
 
 terminate(_Reason, _St) ->
     ok.
+
+do_deliver(ToDid, Msg, St) ->
+    case maps:get(ToDid, St#st.subs, []) of
+        [] ->
+            Q = maps:update_with(ToDid, fun(L) -> [Msg | L] end, [Msg],
+                                 St#st.queues),
+            St#st{queues = Q};
+        Pids ->
+            _ = [P ! {spartan_msg, Msg} || P <- Pids],
+            St
+    end.
+
+%% Dedup keyed per recipient, so a broadcast (one msg_id, many recipients)
+%% still fans out, while a duplicate to the same recipient is dropped.
+is_dup(ToDid, MsgId, St) when is_binary(MsgId) ->
+    maps:is_key({ToDid, MsgId}, St#st.seen);
+is_dup(_ToDid, _MsgId, _St) ->
+    false.
+
+mark_seen(ToDid, MsgId, St) when is_binary(MsgId) ->
+    Seen0 = case map_size(St#st.seen) >= ?SEEN_MAX of
+        true  -> #{};
+        false -> St#st.seen
+    end,
+    St#st{seen = maps:put({ToDid, MsgId}, true, Seen0)};
+mark_seen(_ToDid, _MsgId, St) ->
+    St.
 
 remove_sub(Did, Pid, St) ->
     Subs = case lists:delete(Pid, maps:get(Did, St#st.subs, [])) of
