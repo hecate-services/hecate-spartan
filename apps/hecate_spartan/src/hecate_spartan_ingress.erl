@@ -46,9 +46,12 @@ terminate(_Reason, _S) ->
 api_dispatch() ->
     cowboy_router:compile([
         {'_', [
-            {"/v1/register", register_entity_api, []},
-            {"/v1/send",     route_message_api,   []},
-            {"/v1/receive",  receive_api,         []}
+            {"/v1/register",     register_entity_api,   []},
+            {"/v1/send",         route_message_api,     []},
+            {"/v1/broadcast",    broadcast_message_api, []},
+            {"/v1/receive",      receive_api,           []},
+            {"/v1/artifact",     artifact_api,          []},
+            {"/v1/artifact/:hash", artifact_api,        []}
         ]}
     ]).
 

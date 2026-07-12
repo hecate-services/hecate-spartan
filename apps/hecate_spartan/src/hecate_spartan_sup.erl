@@ -35,6 +35,9 @@ init([]) ->
         %% Projection: message_routed_v1 -> recipient inbox.
         projection(message_routed_v1_to_inbox),
 
+        %% Projection: message_broadcast_v1 -> every entity's inbox.
+        projection(message_broadcast_v1_to_inboxes),
+
         %% Entity-facing HTTP ingress + /health listener. Depends on identity
         %% (UCAN minting), the registry, and the inbox, so it starts last.
         worker(hecate_spartan_ingress)

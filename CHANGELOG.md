@@ -43,9 +43,22 @@ All notable changes to hecate-spartan are documented here. Format follows
   B receives the message live over its SSE `/v1/receive` connection with the
   correct body + sender; unauthenticated send → 401. 31 EUnit tests green.
 
+- **Broadcast: `broadcast_message` slice.** Command, event, handler,
+  `broadcast_aggregate` (reuses `message_state`), and the
+  `message_broadcast_v1_to_inboxes` projection (fan-out to every registered
+  entity's inbox except the sender). `POST /v1/broadcast`.
+- **Content: `share_artifact`.** `POST /v1/artifact` (content/share cap → macula
+  content → hash) and `GET /v1/artifact/:hash` (hash → bytes), over the Macula
+  content-sharing primitive. Degrades to `503` when no mesh client is attached.
+- **Verified end-to-end**: A broadcasts; B and C both receive it live over SSE
+  with the broadcast flag; authenticated artifact POST offline → 503,
+  unauthenticated → 401. 39 EUnit tests green.
+
 ### Still to build (Phase 1a)
-- `broadcast_message` and `share_artifact` slices, plus `macula:publish` for
-  forward-compat federation. Then the `macula_radio.py` client.
+- `macula:publish` on routed/broadcast events for forward-compat federation.
+- The `macula_radio.py` client (SpartanRadio drop-in).
+- Artifact content roundtrip needs a live station to verify (offline path only,
+  for now).
 
 ## [0.1.0] - 2026-07-12
 
