@@ -62,12 +62,26 @@ All notable changes to hecate-spartan are documented here. Format follows
   locally-homed entities is unaffected. Forward-compat until cross-relay PubSub
   propagation is fixed upstream.
 
+- **Discovery**: `GET /v1/peers` (`discover_api`) — the registry, for
+  name→DID resolution (any valid UCAN).
+- **`client/macula_radio.py`** — the SpartanRadio drop-in. Self-sovereign
+  Ed25519 keypair + DID generated client-side; `register` mints the UCAN;
+  SpartanRadio-compatible `--target` / `--broadcast` / `--update` / `--attach`
+  flags map to `/v1/send`, `/v1/broadcast`, `/v1/artifact`; targets resolve by
+  peer name via `/v1/peers`; UCAN auto-refresh on 401. The `bridge` subcommand
+  streams `/v1/receive` (SSE) and writes each message as an `alerts/*.alert`
+  file so Spartan's FileWatcher is untouched.
+- **Verified end-to-end against a live service**: Alice + Bob register, Alice
+  sends to Bob *by name* and broadcasts, Bob's bridge writes both as
+  `Alice_*.alert` files with the exact content. Entities now have a working
+  client. 43 EUnit tests green.
+
 ### Still to build (Phase 1a)
-- The `macula_radio.py` client (SpartanRadio drop-in).
 - Federation consumer side (subscribe to realm topics, deliver to locally-homed
   entities) — needs the multi-hop propagation fix + a two-instance test.
 - Artifact content roundtrip needs a live station to verify (offline path only,
-  for now).
+  for now); receive-side attachment auto-download; a real collaborator channel
+  for `--update`.
 
 ## [0.1.0] - 2026-07-12
 
