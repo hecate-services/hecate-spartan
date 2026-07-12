@@ -33,9 +33,19 @@ deliver(Data, State, RM) ->
             from    => gf(from, Data),
             body    => gf(body, Data),
             sent_at => gf(sent_at, Data)},
-    ok = hecate_spartan_inbox:deliver(To, Msg),
-    {ok, RM2} = evoq_read_model:put(MsgId, Msg#{to => To, delivered => true}, RM),
+    %% Deliver in-process only when the recipient is homed here. A remote
+    %% recipient is reached by the on_message_routed_publish_fact emitter +
+    %% the recipient's home federation_inbox, so delivering locally would just
+    %% queue junk for an entity that never connects here.
+    Delivered = deliver_if_local(To, Msg),
+    {ok, RM2} = evoq_read_model:put(MsgId, Msg#{to => To, delivered => Delivered}, RM),
     {ok, State, RM2}.
+
+deliver_if_local(To, Msg) ->
+    case hecate_spartan_entities:get(To) of
+        {ok, _}            -> ok = hecate_spartan_inbox:deliver(To, Msg), true;
+        {error, not_found} -> false
+    end.
 
 get_event_type(#{event_type := T}) -> T;
 get_event_type(_)                  -> undefined.

@@ -1,7 +1,8 @@
 %%% @doc Ingress: POST /v1/send.
 %%%
 %%% The sender authenticates with its UCAN (Bearer). The `from' is the UCAN
-%%% audience — you cannot send as someone else. Recipient must be registered.
+%%% audience — you cannot send as someone else. Recipient must be known across
+%%% the federation (local or a peer instance).
 %%% Body: { "to": "did:...", "body": "..." }.
 -module(route_message_api).
 
@@ -31,7 +32,9 @@ read_and_send(From, Req0, State) ->
     case decode(Body) of
         {ok, #{<<"to">> := To, <<"body">> := Text}}
           when is_binary(To), is_binary(Text), To =/= <<>>, Text =/= <<>> ->
-            case hecate_spartan_entities:get(To) of
+            %% Resolve mesh-wide: a recipient homed on any federation instance
+            %% is routable; the routed fact reaches its home instance.
+            case hecate_spartan_mesh_entities:get(To) of
                 {ok, _}            -> do_send(From, To, Text, Req1, State);
                 {error, not_found} -> reply(404, #{error => unknown_recipient}, Req1, State)
             end;
