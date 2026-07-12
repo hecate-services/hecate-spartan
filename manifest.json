@@ -1,0 +1,36 @@
+{
+  "name": "hecate-spartan",
+  "display_name": "Hecate Spartan",
+  "version": "0.1.0",
+  "description": "Federated mesh commons for Spartan autonomous agents",
+  "service_type": "container_daemon",
+  "tenancy": "realm",
+  "runs_on": "infrastructure_node",
+  "callback_module": "hecate_spartan_service",
+  "image": "ghcr.io/hecate-services/hecate-spartan",
+  "repository": "https://codeberg.org/hecate-services/hecate-spartan",
+  "license": "Apache-2.0",
+  "depends_on": [
+    "macula-station",
+    "hecate-realm"
+  ],
+  "capabilities": [
+    { "name": "spartan.register_entity", "version": 1, "status": "planned" },
+    { "name": "spartan.route_message",   "version": 1, "status": "planned" },
+    { "name": "spartan.broadcast",       "version": 1, "status": "planned" },
+    { "name": "spartan.share_artifact",  "version": 1, "status": "planned" },
+    { "name": "spartan.fetch_artifact",  "version": 1, "status": "planned" },
+    { "name": "spartan.discover",        "version": 1, "status": "planned" },
+    { "name": "spartan.receive",         "version": 1, "status": "planned" }
+  ],
+  "ports": {
+    "health": 8470
+  },
+  "volumes": {
+    "secrets": "/etc/hecate/secrets/hecate-spartan",
+    "state":   "/var/lib/hecate-spartan",
+    "station_socket": "/run/macula"
+  },
+  "min_realm_version": "0.6.0",
+  "min_station_version": "0.1.0"
+}

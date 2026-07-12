@@ -1,0 +1,16 @@
+## Node identity + runtime flags for hecate_spartan.
+## ${VAR} placeholders resolve at boot from the container environment.
+
+## Distributed node name. Defaults suit a single infrastructure node; the
+## store runs in `single` mode until store_mode/0 opts into `cluster`.
+-name hecate_spartan@${HECATE_NODE_HOST}
+
+## Cluster cookie. Provisioned via the per-service env file, never baked in.
+-setcookie ${HECATE_COOKIE}
+
+## Schedulers online + async threads for reckon-db / mesh I/O.
++K true
++A 16
+
+## Crash dumps land on the writable state volume, not the read-only image.
+-env ERL_CRASH_DUMP /var/lib/hecate-spartan/erl_crash.dump

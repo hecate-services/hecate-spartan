@@ -1,0 +1,25 @@
+{application, hecate_spartan, [
+    {description, "Federated mesh commons for Spartan autonomous agents"},
+    {vsn, "0.1.0"},
+    {registered, [hecate_spartan_sup]},
+    {mod, {hecate_spartan_app, []}},
+    {applications, [
+        kernel,
+        stdlib,
+        crypto,
+        %% hecate_om starts the reckon_db/evoq stack itself when this
+        %% service's store_id/0 + data_dir/0 callbacks are present.
+        hecate_om
+    ]},
+    {env, [
+        %% On-disk root for this service's reckon-db store. sys.config.src
+        %% overrides from ${HECATE_DATA_DIR} at boot.
+        {data_dir,       "/var/lib/hecate-spartan"},
+        {event_store_id, hecate_spartan_store}
+    ]},
+    {modules, []},
+    {licenses, ["Apache-2.0"]},
+    {links, [
+        {"Codeberg", "https://codeberg.org/hecate-services/hecate-spartan"}
+    ]}
+]}.

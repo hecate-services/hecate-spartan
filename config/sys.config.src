@@ -1,0 +1,43 @@
+%% Substituted by relx at build time; ${VAR} placeholders resolve from the
+%% runtime environment at boot (set via the per-service env file in
+%% hecate-gitops/system/hecate-spartan.env).
+%%
+%% Required env vars:
+%%   HECATE_DATA_DIR   On-disk root for the reckon-db store
+%%                     (Quadlet maps /bulk0/hecate/hecate-spartan here).
+
+[
+    {hecate_spartan, [
+        {data_dir,       "${HECATE_DATA_DIR}"},
+        {event_store_id, hecate_spartan_store}
+    ]},
+
+    {hecate_om, [
+        {service_cert_path, "/etc/hecate/secrets/service-cert.pem"},
+        {station_socket,    "/run/macula/station.sock"},
+        {health_port,       8470},
+        {capability_topic,  <<"_mesh.cap.">>}
+    ]},
+
+    %% Reckon-db pool defaults. The store itself is started by
+    %% hecate_om:boot/1 via store_id/0 + data_dir/0 — do NOT add a
+    %% {stores, [...]} list here.
+    {reckon_db, [
+        {writer_pool_size,  5},
+        {reader_pool_size,  5},
+        {gateway_pool_size, 1}
+    ]},
+
+    %% evoq + reckon_evoq adapter wiring. Without it, evoq crashes on first
+    %% dispatch with {not_configured, event_store_adapter}.
+    {evoq, [
+        {event_store_adapter,  reckon_evoq_adapter},
+        {subscription_adapter, reckon_evoq_adapter},
+        {store_id,             hecate_spartan_store},
+        {consistency,          eventual}
+    ]},
+
+    {kernel, [
+        {logger_level, info}
+    ]}
+].
