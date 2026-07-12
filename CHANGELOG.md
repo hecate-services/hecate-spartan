@@ -30,10 +30,22 @@ All notable changes to hecate-spartan are documented here. Format follows
   → registry) and returns a valid UCAN; forged signatures get 401; `/health`
   returns 200. 24 EUnit tests green.
 
+- **Messaging: `route_message` + inbox + SSE receive.**
+  - `hecate_spartan_inbox` — per-entity in-process delivery: push to a live
+    receiver, else queue backlog; subscribers monitored for cleanup.
+  - `hecate_spartan_auth` — UCAN bearer authentication + capability checks
+    (`msg/send`, `msg/recv`) for the messaging endpoints.
+  - `route_message` slice (command, event, handler, `message_aggregate` /
+    `message_state`, and the `message_routed_v1_to_inbox` projection).
+  - `POST /v1/send` (sender = UCAN audience; recipient must be registered) and
+    `GET /v1/receive` (SSE stream: backlog flush + live push + keepalive).
+- **Verified end-to-end**: two entities register; A `POST /v1/send` to B;
+  B receives the message live over its SSE `/v1/receive` connection with the
+  correct body + sender; unauthenticated send → 401. 31 EUnit tests green.
+
 ### Still to build (Phase 1a)
-- `route_message` / `broadcast_message` / `share_artifact` / `receive` (SSE)
-  slices, the in-process inbox, and `macula:publish` for forward-compat
-  federation. Then the `macula_radio.py` client.
+- `broadcast_message` and `share_artifact` slices, plus `macula:publish` for
+  forward-compat federation. Then the `macula_radio.py` client.
 
 ## [0.1.0] - 2026-07-12
 

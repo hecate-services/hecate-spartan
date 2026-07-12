@@ -26,18 +26,27 @@ init([]) ->
         worker(hecate_spartan_entities),
 
         %% Projection: entity_registered_v1 -> entities registry.
-        #{id => entity_registered_v1_to_entities,
-          start => {evoq_projection, start_link,
-                    [entity_registered_v1_to_entities, #{},
-                     #{store_id => hecate_spartan_store}]},
-          restart => permanent, shutdown => 5000, type => worker,
-          modules => [entity_registered_v1_to_entities]},
+        projection(entity_registered_v1_to_entities),
+
+        %% In-process message inbox. Must start before the message projection
+        %% (which delivers into it) and before the ingress (which reads it).
+        worker(hecate_spartan_inbox),
+
+        %% Projection: message_routed_v1 -> recipient inbox.
+        projection(message_routed_v1_to_inbox),
 
         %% Entity-facing HTTP ingress + /health listener. Depends on identity
-        %% (UCAN minting) and the registry, so it starts last.
+        %% (UCAN minting), the registry, and the inbox, so it starts last.
         worker(hecate_spartan_ingress)
     ],
     {ok, {SupFlags, Children}}.
+
+projection(Module) ->
+    #{id => Module,
+      start => {evoq_projection, start_link,
+                [Module, #{}, #{store_id => hecate_spartan_store}]},
+      restart => permanent, shutdown => 5000, type => worker,
+      modules => [Module]}.
 
 worker(Module) ->
     #{id => Module,
