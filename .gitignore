@@ -12,3 +12,7 @@ rebar3.crashdump
 # ex_doc / edoc generated output
 /doc/
 dist/
+
+# entity identity cache (holds Ed25519 private key)
+.spartan_mesh.json
+client/**/.spartan_mesh.json
