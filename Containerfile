@@ -1,41 +1,73 @@
-# Multi-stage Erlang build for hecate-spartan.
-# Pushed to ghcr.io/hecate-services/hecate-spartan:latest + :semver by CI.
+# hecate-spartan — L2 hecate-om service: the federated mesh commons for
+# Spartan autonomous entities. Outbound macula client (dials a station seed),
+# owns a reckon-db store. One node = one "home/locale" for entities.
+# Pushed to ghcr.io/hecate-services/hecate-spartan:latest + :semver.
+#
+# Multi-stage: the builder compiles the macula_quic NIF FROM SOURCE
+# (MACULA_FORCE_SOURCE_BUILD=1) so we always get the 5.1.0 connect-hang fix,
+# never a fetched precompiled artifact. Runtime is a bare Alpine (same 3.22 as
+# erlang:27-alpine) with the release's bundled ERTS.
 
 #----------------------------------------------------------------------
-# Stage 1 — builder: full Erlang + rebar3 + deps
+# Stage 1 — builder: Erlang + Rust + rebar3 + deps + release
 #----------------------------------------------------------------------
 FROM docker.io/erlang:27-alpine AS builder
-
-RUN apk add --no-cache git build-base
-
 WORKDIR /build
-# No rebar.lock committed (org convention: lockfiles stay out of git), so
-# deps resolve at build time.
+
+# Build toolchain. Rust via rustup (Alpine's rustc lags what macula's Rust deps
+# need); crt-static off so the NIF links as a cdylib.
+RUN apk add --no-cache git curl bash build-base cmake perl linux-headers
+RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs \
+        | sh -s -- -y --default-toolchain stable --profile minimal
+ENV PATH="/root/.cargo/bin:${PATH}"
+ENV RUSTFLAGS="-C target-feature=-crt-static"
+ENV MACULA_FORCE_SOURCE_BUILD=1
+# rebar3 runs the reckon_db + macula NIF build hooks in a subprocess whose PATH
+# does NOT include /root/.cargo/bin, so symlink the toolchain into /usr/local/bin
+# (always on the default PATH any subprocess inherits). rustup's proxies dispatch
+# on argv[0], so the symlinks resolve cargo/rustc correctly.
+RUN ln -sf /root/.cargo/bin/rustup /usr/local/bin/cargo \
+    && ln -sf /root/.cargo/bin/rustup /usr/local/bin/rustc \
+    && ln -sf /root/.cargo/bin/rustup /usr/local/bin/rustup \
+    && cargo --version && rustc --version
+
+RUN curl -fsSL https://s3.amazonaws.com/rebar3/rebar3 -o /usr/local/bin/rebar3 \
+    && chmod +x /usr/local/bin/rebar3
+
+# Deps first (cacheable until rebar.config changes). No rebar.lock committed
+# (org convention: lockfiles stay out of git), so deps resolve at build time.
 COPY rebar.config ./
-COPY apps ./apps
+RUN rebar3 get-deps
+
+# Source, then the production release (bundles ERTS, strips debug_info).
 COPY config ./config
-
-# Fetch deps + assemble a production release with embedded ERTS.
-RUN rebar3 as prod tar
+COPY apps ./apps
+RUN rebar3 as prod release
 
 #----------------------------------------------------------------------
-# Stage 2 — runtime: slim image, just the release tarball
+# Stage 2 — runtime: slim Alpine + the assembled release
 #----------------------------------------------------------------------
-FROM docker.io/alpine:3.20
-
-RUN apk add --no-cache libstdc++ ncurses-libs openssl wget
-
+FROM docker.io/alpine:3.22
+RUN apk add --no-cache ncurses-libs libstdc++ libgcc openssl ca-certificates curl
 WORKDIR /app
-COPY --from=builder /build/_build/prod/rel/hecate_spartan/*.tar.gz /tmp/release.tar.gz
-RUN tar xf /tmp/release.tar.gz && rm /tmp/release.tar.gz
+COPY --from=builder /build/_build/prod/rel/hecate_spartan ./
+RUN mkdir -p /data
+
+ENV HOME=/app
+# Substitute ${VAR} in vm.args/sys.config from the container env at boot.
+ENV RELX_REPLACE_OS_VARS=true
+# Defaults; the per-node env file overrides seeds, realm, node host, cookie.
+ENV HECATE_DATA_DIR=/data
+ENV HECATE_NODE_HOST=127.0.0.1
+ENV HECATE_COOKIE=hecate_spartan
 
 # Realm service-principal cert mounts here; station socket under /run/macula.
 VOLUME ["/etc/hecate/secrets", "/var/lib/hecate-spartan"]
 
+# 8470 health, 8471 entity ingress (register/send/receive/broadcast/artifact).
 EXPOSE 8470 8471
-
-HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
-    CMD wget --spider -q http://localhost:8470/health || exit 1
+HEALTHCHECK --interval=30s --timeout=5s --start-period=30s --retries=3 \
+    CMD curl -fsS http://127.0.0.1:8470/health || exit 1
 
 ENTRYPOINT ["/app/bin/hecate_spartan"]
 CMD ["foreground"]

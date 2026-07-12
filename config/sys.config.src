@@ -18,7 +18,11 @@
         {service_cert_path, "/etc/hecate/secrets/service-cert.pem"},
         {station_socket,    "/run/macula/station.sock"},
         {health_port,       8470},
-        {capability_topic,  <<"_mesh.cap.">>}
+        {capability_topic,  <<"_mesh.cap.">>},
+        %% Realm tag scopes all mesh topics. All spartan nodes in a federation
+        %% MUST share it. 64-hex (32 bytes) from the per-node env file; station
+        %% seeds come from MACULA_STATION_SEEDS (read directly from env).
+        {realm,             <<"${HECATE_REALM}">>}
     ]},
 
     %% Reckon-db pool defaults. The store itself is started by

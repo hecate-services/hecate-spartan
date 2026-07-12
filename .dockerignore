@@ -1,0 +1,8 @@
+_build/
+.git/
+dist/
+doc/
+*.dump
+erl_crash.dump
+client/__pycache__/
+.rebar3/
