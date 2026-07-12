@@ -13,9 +13,12 @@ init(Req0, State) ->
 handle_get(Req0, State) ->
     case hecate_spartan_auth:authenticate(Req0) of
         {ok, _Did, _Payload} ->
+            %% Mesh-wide directory (local + federated peers), so a name resolves
+            %% across the whole federation, not just this instance.
             Peers = [#{did => maps:get(did, E),
-                       entity_name => maps:get(entity_name, E, null)}
-                     || E <- hecate_spartan_entities:all()],
+                       entity_name => maps:get(entity_name, E, null),
+                       home => maps:get(home, E, null)}
+                     || E <- hecate_spartan_mesh_entities:all()],
             json(200, #{peers => Peers}, Req0, State);
         {error, Reason} ->
             json(401, #{error => Reason}, Req0, State)

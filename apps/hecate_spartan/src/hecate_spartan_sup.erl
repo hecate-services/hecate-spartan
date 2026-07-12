@@ -28,6 +28,18 @@ init([]) ->
         %% Projection: entity_registered_v1 -> entities registry.
         projection(entity_registered_v1_to_entities),
 
+        %% Mesh-wide entity directory (local + announced peers). Must start
+        %% before the announce PM and the federation registry that write it.
+        worker(hecate_spartan_mesh_entities),
+
+        %% PM: on entity_registered, announce to the federation (upsert local
+        %% mesh_entities row + publish entity_announced fact).
+        projection(on_entity_registered_announce),
+
+        %% Federation registry: subscribe to spartan/registry, project peers'
+        %% announcements into mesh_entities; re-announce local entities.
+        worker(federation_registry),
+
         %% In-process message inbox. Must start before the message projection
         %% (which delivers into it) and before the ingress (which reads it).
         worker(hecate_spartan_inbox),
