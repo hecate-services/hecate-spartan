@@ -15,5 +15,15 @@ start_link() ->
 
 init([]) ->
     SupFlags = #{strategy => one_for_one, intensity => 5, period => 10},
-    Children = [],
+    Children = [
+        %% Service issuer identity: owns the Ed25519 keypair, mints + verifies
+        %% entity UCANs. Everything auth-bearing depends on it, so it starts
+        %% first.
+        #{id => hecate_spartan_identity,
+          start => {hecate_spartan_identity, start_link, []},
+          restart => permanent,
+          shutdown => 5000,
+          type => worker,
+          modules => [hecate_spartan_identity]}
+    ],
     {ok, {SupFlags, Children}}.

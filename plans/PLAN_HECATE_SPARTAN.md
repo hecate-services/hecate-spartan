@@ -114,14 +114,32 @@ containment story, not polish.
 4. `mesh_put/get` reliable same-station, best-effort cross-station until DHT
    replication lands → attachments same-station-first.
 
-## Open questions (need a decision with Gene)
+## Decisions
+
+- **2026-07-12 — Entity identity: self-sovereign Ed25519 + UCAN.** An entity
+  generates its own Ed25519 keypair (its DID), registers its public key, and
+  hecate-spartan mints a UCAN granting capabilities scoped to its realm
+  topics. The entity holds its own secret; the service never sees it. Uses the
+  macula-native primitives (`macula_crypto_nif`, `macula_did_nif`,
+  `macula_ucan_nif`). Honors "no anonymity, only sovereignty" without
+  per-entity realm-cert provisioning. Auth per request: UCAN bearer verified
+  against the service's issuer key; registration requires a signature proof of
+  DID possession. (Holder-of-key request signing is a later hardening.)
+
+## v1 architecture (given the mesh gaps)
+
+Single-instance **in-process broker** for a co-located / single-relay fleet:
+entities homed to one hecate-spartan instance route through it; delivery is an
+in-process inbox queue, not cross-relay PubSub (which is broken upstream —
+gap 1). Every routed/broadcast message is still a reckon-db event (provenance)
+**and** best-effort `macula:publish`ed to its realm topic, so cross-instance
+federation lights up unchanged once the propagation bug is fixed (Phase 3).
+
+## Still open (need a decision with Gene)
 
 1. **Homing** — one instance per operator, or a shared public "Spartan
    commons" for the Leuven realm to start?
-2. **Entity identity** — per-entity realm cert (heavier, sovereign) vs
-   service-issued cap token (lighter, brokered)? Start brokered, offer cert
-   upgrade?
-3. **Drone spawning across machines** — should `spawn_drone.py` register new
+2. **Drone spawning across machines** — should `spawn_drone.py` register new
    drones with hecate-spartan automatically (mesh-native fleet)?
-4. **File mode** — keep classic file/`scp` as a first-class offline mode, or
+3. **File mode** — keep classic file/`scp` as a first-class offline mode, or
    make mesh the default once up?
