@@ -28,28 +28,38 @@ set -euo pipefail
 IMAGE="${SPARTAN_IMAGE:-ghcr.io/hecate-services/hecate-spartan:latest}"
 REALM="${HECATE_REALM:?set HECATE_REALM to the 64-hex spartan realm tag}"
 
-# host | station seed | country code | ingress port | health port
+# host | station seed | country code | ingress port | health port | node name
 #
 # Two per host, each on a DIFFERENT country station. Copenhagen and Dublin are
 # DNS aliases onto Amsterdam's and Brussels' addresses, not separate stations,
 # so they are not used here.
+#
+# WHY BE/DE/FR/IT ARE STILL CALLED `hecate_spartan`, not `hecate_spartan_be`:
+# reckon-db (Ra/khepri) persists cluster membership as {Name, Node}, so an
+# existing store is bound to the Erlang node name that created it. Renaming the
+# node orphans the store from its own leader -- it comes up logging
+# "Leader detected: 'hecate_spartan@127.0.0.1'" for a node that no longer
+# exists, and every dispatch times out. Those four nodes carry the fleet's event
+# history (every registration since the beginning), so they keep their original
+# name and their data. Only the nodes born with the new naming use it. Symmetry
+# is not worth an event log.
 MAP=(
-  "beam00.lab|https://station-be-brussels.macula.io:4433|be|8471|8470"
-  "beam00.lab|https://station-nl-amsterdam.macula.io:4433|nl|8481|8480"
-  "beam01.lab|https://station-de-frankfurt.macula.io:4433|de|8471|8470"
-  "beam01.lab|https://station-at-vienna.macula.io:4433|at|8481|8480"
-  "beam02.lab|https://station-fr-paris.macula.io:4433|fr|8471|8470"
-  "beam02.lab|https://station-es-madrid.macula.io:4433|es|8481|8480"
-  "beam03.lab|https://station-it-milan.macula.io:4433|it|8471|8470"
-  "beam03.lab|https://station-pl-warsaw.macula.io:4433|pl|8481|8480"
+  "beam00.lab|https://station-be-brussels.macula.io:4433|be|8471|8470|hecate_spartan"
+  "beam00.lab|https://station-nl-amsterdam.macula.io:4433|nl|8481|8480|hecate_spartan_nl"
+  "beam01.lab|https://station-de-frankfurt.macula.io:4433|de|8471|8470|hecate_spartan"
+  "beam01.lab|https://station-at-vienna.macula.io:4433|at|8481|8480|hecate_spartan_at"
+  "beam02.lab|https://station-fr-paris.macula.io:4433|fr|8471|8470|hecate_spartan"
+  "beam02.lab|https://station-es-madrid.macula.io:4433|es|8481|8480|hecate_spartan_es"
+  "beam03.lab|https://station-it-milan.macula.io:4433|it|8471|8470|hecate_spartan"
+  "beam03.lab|https://station-pl-warsaw.macula.io:4433|pl|8481|8480|hecate_spartan_pl"
 )
 
 for entry in "${MAP[@]}"; do
-  IFS='|' read -r HOST SEED CC PORT HPORT <<<"$entry"
+  IFS='|' read -r HOST SEED CC PORT HPORT NODE <<<"$entry"
   echo "=== ${HOST} (${CC}) -> ${SEED}  ingress :${PORT}"
   # REALM/SEED/CC/IMAGE are not secrets (realm = topic tag, seeds = public URLs).
   ssh -o BatchMode=yes "rl@${HOST}" \
-      "IMAGE='${IMAGE}' REALM='${REALM}' SEED='${SEED}' CC='${CC}' PORT='${PORT}' HPORT='${HPORT}' bash -s" <<'REMOTE'
+      "IMAGE='${IMAGE}' REALM='${REALM}' SEED='${SEED}' CC='${CC}' PORT='${PORT}' HPORT='${HPORT}' NODE='${NODE}' bash -s" <<'REMOTE'
 set -euo pipefail
 docker pull "$IMAGE" >/dev/null
 name="spartan-${CC}"
@@ -60,7 +70,7 @@ docker rm -f "$name" >/dev/null 2>&1 || true
 docker run -d --name "$name" --restart unless-stopped --network host \
   -e HECATE_REALM="$REALM" \
   -e MACULA_STATION_SEEDS="$SEED" \
-  -e HECATE_NODE_NAME="hecate_spartan_${CC}" \
+  -e HECATE_NODE_NAME="$NODE" \
   -e HECATE_NODE_HOST=127.0.0.1 \
   -e HECATE_COOKIE="spartan_${CC}" \
   -e HECATE_INGRESS_PORT="$PORT" \
