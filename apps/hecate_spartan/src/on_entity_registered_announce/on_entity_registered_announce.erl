@@ -50,8 +50,18 @@ fact(Data, Home) ->
       entity_name => gf(entity_name, Data),
       home        => Home,
       locale      => hecate_spartan_service:locale(),
+      %% PRESENCE, not registration. The registry never forgets an entity, so a
+      %% roster built from registrations lists every probe and every dead demo
+      %% that ever said hello. A mind that is actually running holds an open
+      %% receive stream; that is the only honest answer to "is anybody there".
+      online      => safe_online(gf(did, Data)),
       registered_at => gf(registered_at, Data),
       announced_at => erlang:system_time(millisecond)}.
+
+safe_online(Did) when is_binary(Did) ->
+    try hecate_spartan_inbox:online(Did) catch _:_ -> false end;
+safe_online(_) ->
+    false.
 
 %% --- Internal ---
 

@@ -9,6 +9,7 @@
 -behaviour(gen_server).
 
 -export([start_link/0, deliver/2, subscribe/1, unsubscribe/2, pending/1]).
+-export([online/1]).
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2, terminate/2]).
 
 -record(st, {
@@ -45,6 +46,16 @@ unsubscribe(Did, Pid) ->
 pending(Did) ->
     gen_server:call(?MODULE, {pending, Did}).
 
+%% @doc Is this entity actually HOME? True when it holds an open receive stream.
+%%
+%% Presence, not registration. The registry records every entity that ever
+%% registered and never forgets one; a mind that is running holds an SSE stream
+%% open through its bridge for as long as it lives. That stream is the only
+%% honest answer to "is anybody there".
+-spec online(binary()) -> boolean().
+online(Did) ->
+    gen_server:call(?MODULE, {online, Did}).
+
 init([]) ->
     {ok, #st{}}.
 
@@ -57,6 +68,8 @@ handle_call({subscribe, Did, Pid}, _From, St) ->
     {reply, Backlog, St#st{subs = Subs, mons = Mons, queues = Queues}};
 handle_call({pending, Did}, _From, St) ->
     {reply, lists:reverse(maps:get(Did, St#st.queues, [])), St};
+handle_call({online, Did}, _From, St) ->
+    {reply, maps:get(Did, St#st.subs, []) =/= [], St};
 handle_call(_Req, _From, St) ->
     {reply, {error, unknown_call}, St}.
 

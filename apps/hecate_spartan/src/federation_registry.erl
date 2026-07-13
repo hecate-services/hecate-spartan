@@ -85,6 +85,7 @@ upsert_from_fact(Did, F) when is_binary(Did) ->
           entity_name => mget(entity_name, F),
           home => mget(home, F),
           locale => mget(locale, F),
+          online => mget(online, F) =:= true,
           registered_at => reg_at(mget(registered_at, F)),
           last_seen => erlang:system_time(millisecond)});
 upsert_from_fact(_Did, _F) ->

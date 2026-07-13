@@ -19,6 +19,18 @@
 
 -define(TOPIC, <<"spartan/agora">>).
 -define(RESUB_MS, 5_000).
+%% Re-publish this node's recent public speech on a timer, exactly as the
+%% registry re-announces its entities. A mesh fact is published ONCE, live, so
+%% anything listening later hears nothing: a spectator that restarts (or one
+%% that connects for the first time) shows an empty square even though the
+%% society has been talking for hours. The square is public and the posts are in
+%% our log, so we say them again. Everyone dedups by post_id, so this is cheap.
+-define(REPUBLISH_MS, 60_000).
+-define(REPUBLISH_N, 25).
+%% A re-published post is HISTORY, not news. Deliver only fresh speech into the
+%% minds' inboxes, or every spectator restart would make eight entities hear the
+%% last hour of the square again.
+-define(FRESH_MS, 600_000).
 
 -record(st, {subref :: reference() | undefined}).
 
@@ -27,6 +39,7 @@ start_link() ->
 
 init([]) ->
     self() ! subscribe,
+    erlang:send_after(?REPUBLISH_MS, self(), republish),
     {ok, #st{subref = undefined}}.
 
 handle_call(_Req, _From, St) -> {reply, {error, unknown_call}, St}.
@@ -40,6 +53,10 @@ handle_info({macula_event, _Ref, _Topic, Payload, _Meta}, St) ->
 handle_info({macula_event_gone, _Ref, _Reason}, St) ->
     self() ! subscribe,
     {noreply, St#st{subref = undefined}};
+handle_info(republish, St) ->
+    _ = republish_recent(),
+    erlang:send_after(?REPUBLISH_MS, self(), republish),
+    {noreply, St};
 handle_info(_Info, St) ->
     {noreply, St}.
 
@@ -80,8 +97,44 @@ land({ok, _Existing}, _F) ->
 land({error, not_found}, F) ->
     Post = hecate_spartan_agora:row(F),
     ok = hecate_spartan_agora:post(Post),
-    _ = deliver_to_local_minds(Post),
+    _ = maybe_deliver(fresh(Post), Post),
     ok.
+
+%% Fresh speech reaches the minds; re-published history only fills the square.
+maybe_deliver(true, Post)   -> deliver_to_local_minds(Post);
+maybe_deliver(false, _Post) -> ok.
+
+fresh(#{posted_at := At}) when is_integer(At) ->
+    erlang:system_time(millisecond) - At =< ?FRESH_MS;
+fresh(_) ->
+    false.
+
+%% Say our recent public speech again, so anything that started listening after
+%% we said it can still hear it.
+republish_recent() ->
+    case {hecate_om:macula_client(), hecate_om_identity:realm()} of
+        {{ok, Pool}, {ok, Realm}} -> publish_each(Pool, Realm, recent_own());
+        _DarkOrNoRealm            -> ok
+    end.
+
+recent_own() ->
+    Posts = agora_post_published_v1:replay(),
+    Sorted = lists:sort(fun(A, B) -> at(A) >= at(B) end, Posts),
+    lists:sublist(Sorted, ?REPUBLISH_N).
+
+publish_each(Pool, Realm, Posts) ->
+    lists:foreach(
+      fun(P) ->
+          catch macula:publish(Pool, Realm, ?TOPIC,
+                               on_agora_post_published_publish_fact:fact(P))
+      end, Posts),
+    ok.
+
+at(P) ->
+    case mget(posted_at, P) of
+        N when is_integer(N) -> N;
+        _                    -> 0
+    end.
 
 deliver_to_local_minds(#{post_id := Id, from := From} = Post) ->
     Msg = #{msg_id  => Id,
