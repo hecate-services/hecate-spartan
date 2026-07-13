@@ -89,7 +89,9 @@ entity_caps(Realm, EntityDid) ->
       #{with => <<"spartan/", Realm/binary, "/agora">>,
         can => <<"agora/post">>},
       #{with => <<"spartan/", Realm/binary, "/agora">>,
-        can => <<"agora/read">>} ].
+        can => <<"agora/read">>},
+      #{with => <<"spartan/", Realm/binary, "/activity">>,
+        can => <<"activity/report">>} ].
 
 %% ===================================================================
 %% gen_server

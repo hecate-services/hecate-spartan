@@ -77,6 +77,11 @@ init([]) ->
         %% entity chose to speak in public. Spectators (the realm) subscribe it.
         projection(on_agora_post_published_publish_fact),
 
+        %% The pulse: what each agent is DOING between messages (action,
+        %% thought, model call). Without it an autonomous agent that thinks for
+        %% three minutes is indistinguishable from a dead one.
+        projection(on_activity_reported_publish_fact),
+
         %% Entity-facing HTTP ingress + /health listener. Depends on identity
         %% (UCAN minting), the registry, and the inbox, so it starts last.
         worker(hecate_spartan_ingress)

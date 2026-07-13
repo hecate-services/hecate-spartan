@@ -48,7 +48,7 @@ caps_are_realm_scoped() ->
     Recv = <<"spartan/io.macula.spartans/inbox/did:key:e1">>,
     Agora = <<"spartan/io.macula.spartans/agora">>,
     %% send, recv, broadcast, artifact, agora/post, agora/read.
-    [ ?_assertEqual(6, length(Caps))
+    [ ?_assertEqual(7, length(Caps))
     , ?_assert(lists:member(Recv, Withs))
     , ?_assert(lists:member(Agora, Withs)) ].
 
