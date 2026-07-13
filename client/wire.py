@@ -139,17 +139,38 @@ class Args:
         self.config = config
 
 
-def deliver(cfg, args, item):
-    """Send a headline to every agent homed on this node (not the wire itself)."""
-    by_did, _ = resolve_peers(cfg)
+def readers(cfg, locale):
+    """The agents THIS wire serves: the ones homed in its own capital.
+
+    The registry is mesh-wide, so a naive send reaches every entity in the
+    federation -- including agents in seven other countries and every dead probe
+    that ever registered. The whole point is that a Belgian agent reads the
+    Belgian press, so filter on the locale the node reports, and skip anything
+    that is not a live agent.
+    """
+    r = requests.get(cfg["service_url"] + "/v1/peers",
+                     headers=auth_headers(cfg), timeout=30)
+    r.raise_for_status()
+
+    out = []
+    for p in r.json().get("peers", []):
+        name = p.get("entity_name") or ""
+        if p.get("did") == cfg["did"] or name.startswith("wire-"):
+            continue
+        if p.get("locale") != f"{locale}-" and not str(p.get("locale") or "").startswith(f"{locale}-"):
+            continue
+        out.append(p)
+    return out
+
+
+def deliver(cfg, args, item, locale):
+    """Send a headline to the agents this wire serves."""
     body = (f"[{item['source']}] {item['title']}\n"
             f"{item['summary']}\n{item['url']}".strip())
 
     sent = 0
-    for did, name in by_did.items():
-        if did == cfg["did"] or (name or "").startswith("wire-"):
-            continue
-        r = post_authed(args, cfg, "/v1/send", json={"to": did, "body": body})
+    for p in readers(cfg, locale):
+        r = post_authed(args, cfg, "/v1/send", json={"to": p["did"], "body": body})
         if r.status_code == 202:
             sent += 1
     return sent
@@ -169,7 +190,7 @@ def run_once(cfg, args, locale):
 
     # A cognition cycle is ~50k tokens. Deliver a few items, not a whole paper.
     for item in fresh[:MAX_ITEMS]:
-        n = deliver(cfg, args, item)
+        n = deliver(cfg, args, item, locale)
         seen.add(item["id"])
         print(f"[wire] {locale}: {item['title'][:60]} -> {n} agent(s)")
 

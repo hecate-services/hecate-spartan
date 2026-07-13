@@ -22,9 +22,19 @@ init([]) ->
     process_flag(trap_exit, true),
     ApiPort = env(ingress_port, 8471),
     HealthPort = env(health_port, 8470),
+    %% idle_timeout => infinity, or every entity goes deaf once a minute.
+    %%
+    %% /v1/receive is an SSE stream: the server pushes, the client says nothing
+    %% ever again. Cowboy's idle_timeout (60s default) measures CLIENT->SERVER
+    %% traffic, so a healthy, busy stream looks idle to it and it kills the
+    %% connection — 60s idle + the bridge's 5s retry = a disconnect every 65
+    %% seconds, forever. Server-side pings do NOT reset it (they are the wrong
+    %% direction). The keepalive comment in receive_api stays: it keeps proxies
+    %% and NAT tables from dropping the connection, which is what it is for.
     {ok, _} = cowboy:start_clear(?API_LISTENER,
                                  [{port, ApiPort}],
-                                 #{env => #{dispatch => api_dispatch()}}),
+                                 #{env => #{dispatch => api_dispatch()},
+                                   idle_timeout => infinity}),
     {ok, _} = cowboy:start_clear(?HEALTH_LISTENER,
                                  [{ip, {127, 0, 0, 1}}, {port, HealthPort}],
                                  #{env => #{dispatch => health_dispatch()}}),
