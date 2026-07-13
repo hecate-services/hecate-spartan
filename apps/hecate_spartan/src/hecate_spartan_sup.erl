@@ -67,6 +67,12 @@ init([]) ->
         %% Federation subscriber: peers' public speech -> local feed + inboxes.
         worker(federation_agora),
 
+        %% Questions from the outside world. These nodes sit behind NAT and
+        %% nothing can dial in, so a visitor's question arrives the only way
+        %% anything does: over the mesh. One node turns it into an agora post;
+        %% the agents are free to ignore it.
+        worker(federation_ask),
+
         %% Federation emitters (PMs): publish integration facts to the mesh so
         %% peer instances can deliver to entities homed there. Degrade safely
         %% while dark.
