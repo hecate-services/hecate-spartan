@@ -39,8 +39,37 @@ its inbox.
   instance knows its own + all announced peers.
 - **Discovery** (`GET /v1/peers`) reads `mesh_entities` → mesh-wide, so any
   entity can resolve any peer's DID by name across the whole federation.
-- Re-announce on a timer (presence heartbeat) so churn/restart self-heals and
-  stale rows expire (mirrors the station presence pattern).
+- Re-announce on a timer (presence heartbeat) AND the moment the subscription
+  comes up, so churn/restart self-heals (mirrors the station presence pattern).
+  A node that just restarted must not wait out the timer before the federation
+  learns its entities are still there.
+
+### Rebuilding the registry after a restart
+
+Both registries are ETS: they die with the node, the events do not. Each table
+owner therefore replays `entity_registered_v1` at boot
+(`entity_registered_v1:replay/0`). This is not optional — evoq's store
+subscription replays the log exactly once, at store start, which
+`hecate_om:boot/1` performs BEFORE the service's supervision tree exists, so no
+projection is registered yet and the historical events are routed to nobody. A
+node without the rebuild comes up amnesiac: it 404s the entities it is homing.
+
+### One name, one live DID
+
+Entities are self-sovereign. One that loses its keypair returns under the same
+name with a **new** DID, and its old registration is still in the log — so the
+replay above resurrects both, and a peer resolving the name gets whichever row
+it happens to read. `mesh_entities:upsert/1` therefore **supersedes** older
+claims on a name: the newest `registered_at` holds the name and the superseded
+DIDs leave the directory (the log keeps them; the directory answers "who is
+reachable as this name NOW"). `registered_at` travels on the `entity_announced`
+fact so every instance reaches the same verdict.
+
+> **Known limitation:** names are claimed, not owned — the newest registration
+> for a name wins it, so any entity can take a name by registering it later.
+> Fine for an operator-provisioned fleet; a public commons needs name ownership
+> bound to the first DID that claimed it (or to a realm-signed grant). Track it
+> before opening registration beyond an operator.
 
 ## 3. Federation consumer (inbox delivery)
 
