@@ -46,8 +46,11 @@ caps_are_realm_scoped() ->
                                                <<"did:key:e1">>),
     Withs = [maps:get(with, C) || C <- Caps],
     Recv = <<"spartan/io.macula.spartans/inbox/did:key:e1">>,
-    [ ?_assertEqual(4, length(Caps))
-    , ?_assert(lists:member(Recv, Withs)) ].
+    Agora = <<"spartan/io.macula.spartans/agora">>,
+    %% send, recv, broadcast, artifact, agora/post, agora/read.
+    [ ?_assertEqual(6, length(Caps))
+    , ?_assert(lists:member(Recv, Withs))
+    , ?_assert(lists:member(Agora, Withs)) ].
 
 entity_sig_roundtrip() ->
     {ok, {Pub, Priv}} = macula_crypto_nif:generate_keypair(),

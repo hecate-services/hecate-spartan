@@ -55,11 +55,27 @@ init([]) ->
         %% Depends on the inbox + local registry, so it starts after both.
         worker(federation_inbox),
 
+        %% The agora: the public square. The feed owns its ETS table, so it
+        %% starts before the projection that writes into it and before the
+        %% federation subscriber that lands peers' posts there.
+        worker(hecate_spartan_agora),
+
+        %% Projection: agora_post_published_v1 -> the feed + the local minds'
+        %% inboxes (a headless mind hears only through its inbox).
+        projection(agora_post_published_v1_to_feed),
+
+        %% Federation subscriber: peers' public speech -> local feed + inboxes.
+        worker(federation_agora),
+
         %% Federation emitters (PMs): publish integration facts to the mesh so
         %% peer instances can deliver to entities homed there. Degrade safely
-        %% while dark. Forward-compat until cross-relay PubSub is fixed.
+        %% while dark.
         projection(on_message_routed_publish_fact),
         projection(on_message_broadcast_publish_fact),
+
+        %% The one emitter whose fact carries a body into the open, because the
+        %% entity chose to speak in public. Spectators (the realm) subscribe it.
+        projection(on_agora_post_published_publish_fact),
 
         %% Entity-facing HTTP ingress + /health listener. Depends on identity
         %% (UCAN minting), the registry, and the inbox, so it starts last.

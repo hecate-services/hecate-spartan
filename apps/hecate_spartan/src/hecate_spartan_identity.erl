@@ -69,7 +69,13 @@ registration_challenge(Did, TsBin) ->
     <<"hecate-spartan:register:", Did/binary, ":", TsBin/binary>>.
 
 %% @doc The capabilities an entity's UCAN grants: send to any inbox, receive
-%% on its own inbox, broadcast, and share content — all realm-scoped.
+%% on its own inbox, broadcast, share content, and speak and listen in the
+%% agora — all realm-scoped.
+%%
+%% `agora/post' is a separate capability from `msg/send' on purpose. Sending is
+%% correspondence; posting is public speech that leaves the commons as a
+%% body-bearing fact anyone may render. They are different powers, so an
+%% operator can grant one without the other.
 -spec entity_caps(Realm :: binary(), EntityDid :: binary()) -> [map()].
 entity_caps(Realm, EntityDid) ->
     [ #{with => <<"spartan/", Realm/binary, "/inbox/">>,
@@ -79,7 +85,11 @@ entity_caps(Realm, EntityDid) ->
       #{with => <<"spartan/", Realm/binary, "/broadcast">>,
         can => <<"msg/send">>},
       #{with => <<"spartan/", Realm/binary, "/artifact">>,
-        can => <<"content/share">>} ].
+        can => <<"content/share">>},
+      #{with => <<"spartan/", Realm/binary, "/agora">>,
+        can => <<"agora/post">>},
+      #{with => <<"spartan/", Realm/binary, "/agora">>,
+        can => <<"agora/read">>} ].
 
 %% ===================================================================
 %% gen_server

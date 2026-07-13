@@ -51,6 +51,7 @@ api_dispatch() ->
             {"/v1/broadcast",    broadcast_message_api, []},
             {"/v1/receive",      receive_api,           []},
             {"/v1/peers",        discover_api,          []},
+            {"/v1/agora",        publish_to_agora_api,  []},
             {"/v1/artifact",     artifact_api,          []},
             {"/v1/artifact/:hash", artifact_api,        []}
         ]}
