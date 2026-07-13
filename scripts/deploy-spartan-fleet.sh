@@ -16,7 +16,12 @@
 # per station needs env-configurable ingress/health ports (a follow-up rebuild).
 #
 # The beam boxes run DOCKER (not podman, despite older docs). watchtower is
-# present, so the :latest label opts each node into auto-update.
+# present and label-gated -- these nodes deliberately DO NOT carry
+# com.centurylinklabs.watchtower.enable, so watchtower leaves them alone (it
+# still auto-updates dronex, which does carry the label). A watchtower cycle
+# recreates the node, drops every entity's SSE stream and (before the registry
+# rebuild landed) wiped the registry -- fleet churn, not a fault of the
+# entities. Roll a new image here explicitly instead.
 #
 #   HECATE_REALM=<64-hex> ./scripts/deploy-spartan-fleet.sh
 set -euo pipefail
@@ -46,7 +51,6 @@ name="spartan-${CC}"
 data="/bulk0/hecate/spartan/${name}"
 docker rm -f "$name" "spartan-${CC}-1" "spartan-${CC}-2" >/dev/null 2>&1 || true
 docker run -d --name "$name" --restart unless-stopped --network host \
-  --label com.centurylinklabs.watchtower.enable=true \
   -e HECATE_REALM="$REALM" \
   -e MACULA_STATION_SEEDS="$SEED" \
   -e HECATE_NODE_HOST=127.0.0.1 \

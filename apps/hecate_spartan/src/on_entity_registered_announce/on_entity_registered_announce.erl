@@ -26,7 +26,8 @@ project(#{data := Data} = Event, _Metadata, State, RM) ->
             Did = gf(did, Data),
             hecate_spartan_mesh_entities:upsert(
                 #{did => Did, entity_name => gf(entity_name, Data),
-                  home => Home, last_seen => erlang:system_time(millisecond)}),
+                  home => Home, registered_at => gf(registered_at, Data),
+                  last_seen => erlang:system_time(millisecond)}),
             _ = publish_fact(Data, Home),
             {ok, RM2} = evoq_read_model:put(Did, announced, RM),
             {ok, State, RM2};
@@ -39,12 +40,15 @@ project(_Event, _Metadata, State, RM) ->
 -spec topic() -> binary().
 topic() -> <<"spartan/registry">>.
 
+%% `registered_at' travels with the announcement: it is how a peer decides which
+%% DID currently holds a name when an entity has re-registered under a new key.
 -spec fact(map(), binary()) -> map().
 fact(Data, Home) ->
     #{type        => entity_announced,
       did         => gf(did, Data),
       entity_name => gf(entity_name, Data),
       home        => Home,
+      registered_at => gf(registered_at, Data),
       announced_at => erlang:system_time(millisecond)}.
 
 %% --- Internal ---

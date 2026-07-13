@@ -51,8 +51,15 @@ do_subscribe(St) ->
     case {hecate_om:macula_client(), hecate_om_identity:realm()} of
         {{ok, Pool}, {ok, Realm}} ->
             case catch macula:subscribe(Pool, Realm, ?TOPIC, self()) of
-                {ok, Ref} -> St#st{subref = Ref};
-                _         -> retry_subscribe(St)
+                {ok, Ref} ->
+                    %% Announce immediately, don't wait out the timer: a node
+                    %% that just restarted has to tell the federation its
+                    %% entities are still here, or peers keep routing to a home
+                    %% they think is empty.
+                    _ = reannounce_local(),
+                    St#st{subref = Ref};
+                _ ->
+                    retry_subscribe(St)
             end;
         _DarkOrNoRealm ->
             retry_subscribe(St)
@@ -77,9 +84,15 @@ upsert_from_fact(Did, F) when is_binary(Did) ->
         #{did => Did,
           entity_name => mget(entity_name, F),
           home => mget(home, F),
+          registered_at => reg_at(mget(registered_at, F)),
           last_seen => erlang:system_time(millisecond)});
 upsert_from_fact(_Did, _F) ->
     ok.
+
+%% Peers running an older build announce without registered_at; treat them as
+%% the oldest possible claim so a dated announcement never unseats a live one.
+reg_at(At) when is_integer(At) -> At;
+reg_at(_)                      -> 0.
 
 %% Re-publish announcements for this instance's locally-homed entities so peers'
 %% registries self-heal after churn.
@@ -92,7 +105,8 @@ reannounce_local() ->
 
 announce(Home, Entry) ->
     Data = #{did => maps:get(did, Entry, undefined),
-             entity_name => maps:get(entity_name, Entry, undefined)},
+             entity_name => maps:get(entity_name, Entry, undefined),
+             registered_at => maps:get(registered_at, Entry, 0)},
     case {hecate_om:macula_client(), hecate_om_identity:realm()} of
         {{ok, Pool}, {ok, Realm}} ->
             catch macula:publish(Pool, Realm, ?TOPIC,

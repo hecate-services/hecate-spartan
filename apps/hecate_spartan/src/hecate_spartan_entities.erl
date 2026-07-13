@@ -4,6 +4,11 @@
 %%% before the projection guarantees the table outlives any projection
 %%% restart (ETS tables die with their owner). The projection writes here;
 %%% queries read here directly.
+%%%
+%%% The table is in-memory, so it is rebuilt from the event log at boot (see
+%%% `entity_registered_v1:replay/1'). Live events arrive via the projection;
+%%% history arrives here. Without the rebuild a node restart drops every
+%%% registration on the floor while the events sit safely in reckon-db.
 -module(hecate_spartan_entities).
 -behaviour(gen_server).
 
@@ -35,9 +40,26 @@ count() ->
 
 init([]) ->
     ?TABLE = ets:new(?TABLE, [set, public, named_table, {read_concurrency, true}]),
+    Rebuilt = rebuild(),
+    logger:info("[spartan] entity registry rebuilt from the log: ~b entities",
+                [Rebuilt]),
     {ok, #{}}.
 
 handle_call(_Req, _From, S) -> {reply, {error, unknown_call}, S}.
 handle_cast(_Msg, S)       -> {noreply, S}.
 handle_info(_Info, S)      -> {noreply, S}.
 terminate(_Reason, _S)     -> ok.
+
+%% --- Internal ---
+
+%% Replay every registration into the table. Idempotent (upsert by DID) and
+%% ordered oldest-first, so the latest registration for a DID wins.
+rebuild() ->
+    Events = entity_registered_v1:replay(),
+    lists:foreach(fun insert_row/1, Events),
+    length(Events).
+
+insert_row(Event) ->
+    {Did, Entry} = entity_registered_v1_to_entities:row(Event),
+    true = ets:insert(?TABLE, {Did, Entry}),
+    ok.

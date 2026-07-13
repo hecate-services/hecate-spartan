@@ -3,6 +3,7 @@
 -behaviour(evoq_projection).
 
 -export([interested_in/0, init/1, project/4]).
+-export([row/1]).
 
 -define(TABLE, entities).
 
@@ -23,18 +24,24 @@ project(_Event, _Metadata, State, RM) ->
 
 %% --- entity_registered: upsert the directory row ---
 project_registered(Data, State, RM) ->
+    {Did, Entry} = row(Data),
+    {ok, RM2} = evoq_read_model:put(Did, Entry, RM),
+    {ok, State, RM2}.
+
+%% @doc The registry row an entity_registered_v1 becomes. Exported so the table
+%% owner rebuilds identical rows when it replays the log at boot.
+-spec row(map()) -> {binary(), map()}.
+row(Data) ->
     Did = gf(did, Data),
     At = gf(registered_at, Data),
-    Entry = #{
+    {Did, #{
         did           => Did,
         entity_name   => gf(entity_name, Data),
         pubkey        => gf(pubkey, Data),
         status        => 1,
         registered_at => At,
         last_seen     => At
-    },
-    {ok, RM2} = evoq_read_model:put(Did, Entry, RM),
-    {ok, State, RM2}.
+    }}.
 
 %% --- Internal ---
 

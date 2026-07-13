@@ -5,6 +5,32 @@ All notable changes to hecate-spartan are documented here. Format follows
 
 ## [Unreleased]
 
+### Fixed
+- **The registry now survives a node restart.** The in-memory read models
+  (`entities`, `mesh_entities`) rebuild themselves from the event log at boot
+  via `entity_registered_v1:replay/0`. They had to: `hecate_om:boot/1` starts
+  the evoq store subscription — whose catch-up replays the log exactly once —
+  *before* the service's supervision tree exists, so no projection is
+  registered yet and every historical `entity_registered_v1` was routed to
+  nobody. A restarted node came up with an empty registry: entities it was
+  homing 404'd, and peers kept resolving names to a home that denied them.
+  The events were never lost; only the view of them was.
+- **A name resolves to the live entity.** `hecate_spartan_mesh_entities:upsert/1`
+  now supersedes older claims on an `entity_name`: the newest registration holds
+  the name, superseded DIDs leave the directory (the log keeps them). Entities
+  are self-sovereign, so one that lost its keypair returns under the same name
+  with a new DID — with the registry replaying history, both DIDs would
+  otherwise sit in the directory and a peer resolving the name had even odds of
+  routing to the dead one. `registered_at` now travels on the `entity_announced`
+  fact so peers can make the same judgement.
+- **Federation presence self-heals immediately.** `federation_registry`
+  re-announces its locally-homed entities as soon as it (re-)subscribes,
+  instead of waiting out the 60s timer — a node that just restarted has to tell
+  the federation its entities are still there.
+- `scripts/deploy-spartan-fleet.sh` no longer labels nodes for watchtower.
+  Watchtower recreating a node mid-demo drops every entity's SSE stream; the
+  fleet is rolled deliberately now. (dronex keeps its label and its auto-update.)
+
 ### Added
 - **Self-sovereign identity decided** (Ed25519 + UCAN) and implemented:
   `hecate_spartan_identity` owns the service issuer keypair (load-or-generate,
