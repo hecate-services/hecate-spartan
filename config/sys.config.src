@@ -3,21 +3,30 @@
 %% hecate-gitops/system/hecate-spartan.env).
 %%
 %% Required env vars:
-%%   HECATE_DATA_DIR   On-disk root for the reckon-db store
-%%                     (Quadlet maps /bulk0/hecate/hecate-spartan here).
+%%   HECATE_DATA_DIR      On-disk root for the reckon-db store
+%%                        (Quadlet maps /bulk0/hecate/hecate-spartan here).
+%%   HECATE_INGRESS_PORT  Entity-facing API port (default 8471).
+%%   HECATE_HEALTH_PORT   Loopback health port (default 8470).
+%%
+%% The ports are env-driven because the stations are IPv6-only and the beam
+%% hosts reach them only with --network host, which puts these ports on the
+%% HOST. Fixed ports would cap a host at one node; env-driven ports let a host
+%% carry several, each dialing a different country station. The substitution is
+%% textual (RELX_REPLACE_OS_VARS), so these are deliberately unquoted: the value
+%% must land as an Erlang integer, not a string.
 
 [
     {hecate_spartan, [
         {data_dir,       "${HECATE_DATA_DIR}"},
         {event_store_id, hecate_spartan_store},
-        {ingress_port,   8471},
-        {health_port,    8470}
+        {ingress_port,   ${HECATE_INGRESS_PORT}},
+        {health_port,    ${HECATE_HEALTH_PORT}}
     ]},
 
     {hecate_om, [
         {service_cert_path, "/etc/hecate/secrets/service-cert.pem"},
         {station_socket,    "/run/macula/station.sock"},
-        {health_port,       8470},
+        {health_port,       ${HECATE_HEALTH_PORT}},
         {capability_topic,  <<"_mesh.cap.">>},
         %% Realm tag scopes all mesh topics. All spartan nodes in a federation
         %% MUST share it. 64-hex (32 bytes) from the per-node env file; station

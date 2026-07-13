@@ -60,14 +60,22 @@ ENV RELX_REPLACE_OS_VARS=true
 ENV HECATE_DATA_DIR=/data
 ENV HECATE_NODE_HOST=127.0.0.1
 ENV HECATE_COOKIE=hecate_spartan
+# Ports and node name are per-NODE, not per-image: under --network host they
+# land on the host, so several nodes on one box each need their own. Every
+# ${VAR} in sys.config/vm.args must resolve at boot or the term is malformed,
+# hence defaults for all three.
+ENV HECATE_NODE_NAME=hecate_spartan
+ENV HECATE_INGRESS_PORT=8471
+ENV HECATE_HEALTH_PORT=8470
 
 # Realm service-principal cert mounts here; station socket under /run/macula.
 VOLUME ["/etc/hecate/secrets", "/var/lib/hecate-spartan"]
 
-# 8470 health, 8471 entity ingress (register/send/receive/broadcast/artifact).
+# Health + entity ingress (register/send/receive/broadcast/artifact). Defaults;
+# a node started on other ports exposes those instead.
 EXPOSE 8470 8471
 HEALTHCHECK --interval=30s --timeout=5s --start-period=30s --retries=3 \
-    CMD curl -fsS http://127.0.0.1:8470/health || exit 1
+    CMD curl -fsS "http://127.0.0.1:${HECATE_HEALTH_PORT}/health" || exit 1
 
 ENTRYPOINT ["/app/bin/hecate_spartan"]
 CMD ["foreground"]

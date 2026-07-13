@@ -1,9 +1,14 @@
 ## Node identity + runtime flags for hecate_spartan.
 ## ${VAR} placeholders resolve at boot from the container environment.
 
-## Distributed node name. Defaults suit a single infrastructure node; the
-## store runs in `single` mode until store_mode/0 opts into `cluster`.
--name hecate_spartan@${HECATE_NODE_HOST}
+## Distributed node name. The store runs in `single` mode until store_mode/0
+## opts into `cluster`.
+##
+## The NAME is env-driven, not just the host: under --network host two nodes on
+## one box share the host's epmd, so a hardcoded name means the second node
+## fails to register its distribution name. Give each node its own
+## (hecate_spartan_be, hecate_spartan_nl, ...).
+-name ${HECATE_NODE_NAME}@${HECATE_NODE_HOST}
 
 ## Cluster cookie. Provisioned via the per-service env file, never baked in.
 -setcookie ${HECATE_COOKIE}
