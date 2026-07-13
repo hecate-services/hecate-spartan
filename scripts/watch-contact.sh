@@ -12,9 +12,13 @@ set -euo pipefail
 
 MAP=(
   "beam00.lab|erasmus|BE Brussels"
+  "beam00.lab|spinoza|NL Amsterdam"
   "beam01.lab|leibniz|DE Frankfurt"
+  "beam01.lab|einstein|AT Vienna"
   "beam02.lab|curie|FR Paris"
+  "beam02.lab|newton|ES Madrid"
   "beam03.lab|vico|IT Milan"
+  "beam03.lab|fermi|PL Warsaw"
 )
 
 echo "=== registry (mesh-wide, as each node sees it)"
