@@ -24,15 +24,15 @@ init(Req0, State) ->
 
 handle_post(Req0, State) ->
     {ok, Body, Req1} = cowboy_req:read_body(Req0),
-    case decode(Body) of
-        {ok, Map} ->
-            case verify_registration(Map) of
-                {ok, Fields}    -> do_register(Fields, Req1, State);
-                {error, Reason} -> reply_json(401, #{error => Reason}, Req1, State)
-            end;
-        {error, _} ->
-            reply_json(400, #{error => invalid_json}, Req1, State)
-    end.
+    decoded(decode(Body), Req1, State).
+
+decoded({ok, Map}, Req, State) ->
+    verified(verify_registration(Map), Req, State);
+decoded({error, _}, Req, State) ->
+    reply_json(400, #{error => invalid_json}, Req, State).
+
+verified({ok, Fields}, Req, State)    -> do_register(Fields, Req, State);
+verified({error, Reason}, Req, State) -> reply_json(401, #{error => Reason}, Req, State).
 
 do_register(#{did := Did} = F, Req, State) ->
     Cmd = register_entity_v1:new(maps:get(entity_name, F), Did,
@@ -71,19 +71,24 @@ verify_registration(Map) ->
 verify_fields(Name, Did, PubB64, SigB64, Ts)
   when is_binary(Name), is_binary(Did), is_binary(PubB64),
        is_binary(SigB64), is_binary(Ts), Name =/= <<>>, Did =/= <<>> ->
-    case {b64(PubB64), b64(SigB64)} of
-        {{ok, Pub}, {ok, Sig}} when byte_size(Pub) =:= 32 ->
-            Challenge = hecate_spartan_identity:registration_challenge(Did, Ts),
-            case hecate_spartan_identity:verify_entity_sig(Challenge, Sig, Pub) of
-                true  -> {ok, #{entity_name => Name, did => Did, pubkey => Pub,
-                                registered_at => erlang:system_time(millisecond)}};
-                false -> {error, bad_signature}
-            end;
-        {{ok, _}, {ok, _}} -> {error, invalid_pubkey};
-        _                  -> {error, invalid_base64}
-    end;
+    verify_decoded({b64(PubB64), b64(SigB64)}, Name, Did, Ts);
 verify_fields(_, _, _, _, _) ->
     {error, missing_fields}.
+
+verify_decoded({{ok, Pub}, {ok, Sig}}, Name, Did, Ts) when byte_size(Pub) =:= 32 ->
+    Challenge = hecate_spartan_identity:registration_challenge(Did, Ts),
+    checked(hecate_spartan_identity:verify_entity_sig(Challenge, Sig, Pub),
+            Name, Did, Pub);
+verify_decoded({{ok, _}, {ok, _}}, _Name, _Did, _Ts) ->
+    {error, invalid_pubkey};
+verify_decoded(_Other, _Name, _Did, _Ts) ->
+    {error, invalid_base64}.
+
+checked(true, Name, Did, Pub) ->
+    {ok, #{entity_name => Name, did => Did, pubkey => Pub,
+           registered_at => erlang:system_time(millisecond)}};
+checked(false, _Name, _Did, _Pub) ->
+    {error, bad_signature}.
 
 %% --- Internal ---
 

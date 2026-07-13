@@ -15,17 +15,17 @@ init(Req0, _State) ->
     authorize(cowboy_req:method(Req0), Req0).
 
 authorize(<<"GET">>, Req0) ->
-    case hecate_spartan_auth:authenticate(Req0) of
-        {ok, Did, Payload} ->
-            case hecate_spartan_auth:has_cap(Payload, <<"msg/recv">>) of
-                true  -> start_stream(Did, Req0);
-                false -> {ok, err(403, missing_recv_cap, Req0), #{}}
-            end;
-        {error, Reason} ->
-            {ok, err(401, Reason, Req0), #{}}
-    end;
+    authed(hecate_spartan_auth:authenticate(Req0), Req0);
 authorize(_Other, Req0) ->
     {ok, err(405, method_not_allowed, Req0), #{}}.
+
+authed({ok, Did, Payload}, Req0) ->
+    gate(hecate_spartan_auth:has_cap(Payload, <<"msg/recv">>), Did, Req0);
+authed({error, Reason}, Req0) ->
+    {ok, err(401, Reason, Req0), #{}}.
+
+gate(true, Did, Req0)   -> start_stream(Did, Req0);
+gate(false, _Did, Req0) -> {ok, err(403, missing_recv_cap, Req0), #{}}.
 
 start_stream(Did, Req0) ->
     Backlog = hecate_spartan_inbox:subscribe(Did),

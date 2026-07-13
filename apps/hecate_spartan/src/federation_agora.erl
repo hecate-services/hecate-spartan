@@ -65,15 +65,15 @@ terminate(_Reason, _St) -> ok.
 %% --- Internal ---
 
 do_subscribe(St) ->
-    case {hecate_om:macula_client(), hecate_om_identity:realm()} of
-        {{ok, Pool}, {ok, Realm}} ->
-            case catch macula:subscribe(Pool, Realm, ?TOPIC, self()) of
-                {ok, Ref} -> St#st{subref = Ref};
-                _         -> retry_subscribe(St)
-            end;
-        _DarkOrNoRealm ->
-            retry_subscribe(St)
-    end.
+    subscribe_with(hecate_om:macula_client(), hecate_om_identity:realm(), St).
+
+subscribe_with({ok, Pool}, {ok, Realm}, St) ->
+    on_sub(catch macula:subscribe(Pool, Realm, ?TOPIC, self()), St);
+subscribe_with(_Client, _Realm, St) ->
+    retry_subscribe(St).
+
+on_sub({ok, Ref}, St) -> St#st{subref = Ref};
+on_sub(_Other, St)    -> retry_subscribe(St).
 
 retry_subscribe(St) ->
     erlang:send_after(?RESUB_MS, self(), subscribe),

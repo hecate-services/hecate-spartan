@@ -36,13 +36,15 @@ claim(Name, Did, At, Entry) ->
     supersede(rivals(Name, Did), At, Did, Entry).
 
 supersede(Rivals, At, Did, Entry) ->
-    case lists:any(fun({_D, RivalAt}) -> RivalAt > At end, Rivals) of
-        true ->
-            ok;   %% a newer claim on this name already stands
-        false ->
-            lists:foreach(fun({D, _}) -> ets:delete(?TABLE, D) end, Rivals),
-            insert(Did, Entry)
-    end.
+    Newer = lists:any(fun({_D, RivalAt}) -> RivalAt > At end, Rivals),
+    do_supersede(Newer, Rivals, Did, Entry).
+
+%% A newer claim on this name already stands; leave it.
+do_supersede(true, _Rivals, _Did, _Entry) ->
+    ok;
+do_supersede(false, Rivals, Did, Entry) ->
+    lists:foreach(fun({D, _}) -> ets:delete(?TABLE, D) end, Rivals),
+    insert(Did, Entry).
 
 rivals(Name, Did) ->
     [{D, maps:get(registered_at, E, 0)}

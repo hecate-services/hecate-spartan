@@ -67,15 +67,6 @@ init([]) ->
         %% Federation subscriber: peers' public speech -> local feed + inboxes.
         worker(federation_agora),
 
-        %% The threat read model + its projection + the warden subscriber. A
-        %% warden on a public box reports attacks over the mesh; this records the
-        %% evidence chain (on safe infra, not the attacked box), aggregates who
-        %% is attacking whom, and hands a cross-border campaign to the generals
-        %% to judge. The read model owns its ETS table, so it starts first.
-        worker(hecate_spartan_threats),
-        projection(threat_sighted_v1_to_threats),
-        worker(federation_threats),
-
         %% Questions from the outside world. These nodes sit behind NAT and
         %% nothing can dial in, so a visitor's question arrives the only way
         %% anything does: over the mesh. One node turns it into an agora post;

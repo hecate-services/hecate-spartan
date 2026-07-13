@@ -96,15 +96,16 @@ terminate(_Reason, _St) ->
     ok.
 
 do_deliver(ToDid, Msg, St) ->
-    case maps:get(ToDid, St#st.subs, []) of
-        [] ->
-            Q = maps:update_with(ToDid, fun(L) -> [Msg | L] end, [Msg],
-                                 St#st.queues),
-            St#st{queues = Q};
-        Pids ->
-            _ = [P ! {spartan_msg, Msg} || P <- Pids],
-            St
-    end.
+    dispatch(maps:get(ToDid, St#st.subs, []), ToDid, Msg, St).
+
+dispatch([], ToDid, Msg, St) ->
+    St#st{queues = enqueue(ToDid, Msg, St#st.queues)};
+dispatch(Pids, _ToDid, Msg, St) ->
+    _ = [P ! {spartan_msg, Msg} || P <- Pids],
+    St.
+
+enqueue(ToDid, Msg, Queues) ->
+    maps:update_with(ToDid, fun(L) -> [Msg | L] end, [Msg], Queues).
 
 %% Dedup keyed per recipient, so a broadcast (one msg_id, many recipients)
 %% still fans out, while a duplicate to the same recipient is dropped.

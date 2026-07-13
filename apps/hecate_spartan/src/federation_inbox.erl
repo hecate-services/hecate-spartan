@@ -51,13 +51,13 @@ terminate(_Reason, _St) -> ok.
 %% --- Subscription reconciliation ---
 
 reconcile(St) ->
-    case {hecate_om:macula_client(), hecate_om_identity:realm()} of
-        {{ok, Pool}, {ok, Realm}} ->
-            lists:foldl(fun(Topic, Acc) -> ensure_sub(Pool, Realm, Topic, Acc) end,
-                        St, wanted_topics());
-        _DarkOrNoRealm ->
-            St
-    end.
+    reconcile_with(hecate_om:macula_client(), hecate_om_identity:realm(), St).
+
+reconcile_with({ok, Pool}, {ok, Realm}, St) ->
+    lists:foldl(fun(Topic, Acc) -> ensure_sub(Pool, Realm, Topic, Acc) end,
+                St, wanted_topics());
+reconcile_with(_Client, _Realm, St) ->
+    St.
 
 wanted_topics() ->
     [?BROADCAST_TOPIC |

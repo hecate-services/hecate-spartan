@@ -21,15 +21,15 @@ authenticate(Req) ->
 %% @doc Verify a UCAN token and return {ok, AudienceDid, Payload}.
 -spec authenticate_token(binary()) -> {ok, binary(), map()} | {error, atom()}.
 authenticate_token(Token) ->
-    case hecate_spartan_identity:verify_ucan(Token) of
-        {ok, Payload} ->
-            case maps:get(<<"aud">>, Payload, undefined) of
-                Aud when is_binary(Aud), Aud =/= <<>> -> {ok, Aud, Payload};
-                _                                     -> {error, no_audience}
-            end;
-        {error, _} ->
-            {error, invalid_ucan}
-    end.
+    audience(hecate_spartan_identity:verify_ucan(Token)).
+
+audience({ok, Payload}) ->
+    aud_of(maps:get(<<"aud">>, Payload, undefined), Payload);
+audience({error, _}) ->
+    {error, invalid_ucan}.
+
+aud_of(Aud, Payload) when is_binary(Aud), Aud =/= <<>> -> {ok, Aud, Payload};
+aud_of(_, _)                                           -> {error, no_audience}.
 
 %% @doc True if the UCAN payload grants a capability with the given `can'
 %% action (e.g. <<"msg/send">>, <<"msg/recv">>).

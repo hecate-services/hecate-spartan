@@ -14,15 +14,15 @@ init(Req0, State) ->
     end.
 
 handle_post(Req0, State) ->
-    case hecate_spartan_auth:authenticate(Req0) of
-        {ok, From, Payload} ->
-            case hecate_spartan_auth:has_cap(Payload, <<"msg/send">>) of
-                true  -> read_and_broadcast(From, Req0, State);
-                false -> reply(403, #{error => missing_send_cap}, Req0, State)
-            end;
-        {error, Reason} ->
-            reply(401, #{error => Reason}, Req0, State)
-    end.
+    authed(hecate_spartan_auth:authenticate(Req0), Req0, State).
+
+authed({ok, From, Payload}, Req0, State) ->
+    gate(hecate_spartan_auth:has_cap(Payload, <<"msg/send">>), From, Req0, State);
+authed({error, Reason}, Req0, State) ->
+    reply(401, #{error => Reason}, Req0, State).
+
+gate(true, From, Req0, State)  -> read_and_broadcast(From, Req0, State);
+gate(false, _From, Req0, State) -> reply(403, #{error => missing_send_cap}, Req0, State).
 
 read_and_broadcast(From, Req0, State) ->
     {ok, Body, Req1} = cowboy_req:read_body(Req0),

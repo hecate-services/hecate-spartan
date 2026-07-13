@@ -17,15 +17,15 @@ init(Req0, State) ->
     end.
 
 handle_post(Req0, State) ->
-    case hecate_spartan_auth:authenticate(Req0) of
-        {ok, From, Payload} ->
-            case hecate_spartan_auth:has_cap(Payload, <<"msg/send">>) of
-                true  -> read_and_send(From, Req0, State);
-                false -> reply(403, #{error => missing_send_cap}, Req0, State)
-            end;
-        {error, Reason} ->
-            reply(401, #{error => Reason}, Req0, State)
-    end.
+    authed(hecate_spartan_auth:authenticate(Req0), Req0, State).
+
+authed({ok, From, Payload}, Req0, State) ->
+    gate(hecate_spartan_auth:has_cap(Payload, <<"msg/send">>), From, Req0, State);
+authed({error, Reason}, Req0, State) ->
+    reply(401, #{error => Reason}, Req0, State).
+
+gate(true, From, Req0, State)   -> read_and_send(From, Req0, State);
+gate(false, _From, Req0, State) -> reply(403, #{error => missing_send_cap}, Req0, State).
 
 read_and_send(From, Req0, State) ->
     {ok, Body, Req1} = cowboy_req:read_body(Req0),
@@ -34,13 +34,15 @@ read_and_send(From, Req0, State) ->
           when is_binary(To), is_binary(Text), To =/= <<>>, Text =/= <<>> ->
             %% Resolve mesh-wide: a recipient homed on any federation instance
             %% is routable; the routed fact reaches its home instance.
-            case hecate_spartan_mesh_entities:get(To) of
-                {ok, _}            -> do_send(From, To, Text, Req1, State);
-                {error, not_found} -> reply(404, #{error => unknown_recipient}, Req1, State)
-            end;
+            route(hecate_spartan_mesh_entities:get(To), From, To, Text, Req1, State);
         _ ->
             reply(400, #{error => invalid_request}, Req1, State)
     end.
+
+route({ok, _}, From, To, Text, Req, State) ->
+    do_send(From, To, Text, Req, State);
+route({error, not_found}, _From, _To, _Text, Req, State) ->
+    reply(404, #{error => unknown_recipient}, Req, State).
 
 do_send(From, To, Text, Req, State) ->
     MsgId = msg_id(),
