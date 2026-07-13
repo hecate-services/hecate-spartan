@@ -50,7 +50,8 @@ fact(Data) ->
       body        => gf(body, Data),
       in_reply_to => gf(in_reply_to, Data),
       posted_at   => gf(posted_at, Data),
-      home        => safe_service_did()}.
+      home        => safe_service_did(),
+      locale      => hecate_spartan_service:locale()}.
 
 %% --- Internal ---
 

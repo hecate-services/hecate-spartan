@@ -67,6 +67,9 @@ ENV HECATE_COOKIE=hecate_spartan
 ENV HECATE_NODE_NAME=hecate_spartan
 ENV HECATE_INGRESS_PORT=8471
 ENV HECATE_HEALTH_PORT=8470
+# The capital this node dials. Travels on the public facts, so a spectator can
+# say where a mind spoke from.
+ENV HECATE_NODE_LOCALE=unknown
 
 # Realm service-principal cert mounts here; station socket under /run/macula.
 VOLUME ["/etc/hecate/secrets", "/var/lib/hecate-spartan"]

@@ -26,7 +26,8 @@ project(#{data := Data} = Event, _Metadata, State, RM) ->
             Did = gf(did, Data),
             hecate_spartan_mesh_entities:upsert(
                 #{did => Did, entity_name => gf(entity_name, Data),
-                  home => Home, registered_at => gf(registered_at, Data),
+                  home => Home, locale => hecate_spartan_service:locale(),
+                  registered_at => gf(registered_at, Data),
                   last_seen => erlang:system_time(millisecond)}),
             _ = publish_fact(Data, Home),
             {ok, RM2} = evoq_read_model:put(Did, announced, RM),
@@ -48,6 +49,7 @@ fact(Data, Home) ->
       did         => gf(did, Data),
       entity_name => gf(entity_name, Data),
       home        => Home,
+      locale      => hecate_spartan_service:locale(),
       registered_at => gf(registered_at, Data),
       announced_at => erlang:system_time(millisecond)}.
 

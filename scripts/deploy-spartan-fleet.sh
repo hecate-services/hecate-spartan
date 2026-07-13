@@ -56,10 +56,12 @@ MAP=(
 
 for entry in "${MAP[@]}"; do
   IFS='|' read -r HOST SEED CC PORT HPORT NODE <<<"$entry"
+  # The capital, straight from the station this node dials: station-be-brussels -> be-brussels.
+  LOCALE="$(printf '%s' "$SEED" | sed -E 's#.*station-([a-z]{2}-[a-z-]+)\.macula\.io.*#\1#')"
   echo "=== ${HOST} (${CC}) -> ${SEED}  ingress :${PORT}"
   # REALM/SEED/CC/IMAGE are not secrets (realm = topic tag, seeds = public URLs).
   ssh -o BatchMode=yes "rl@${HOST}" \
-      "IMAGE='${IMAGE}' REALM='${REALM}' SEED='${SEED}' CC='${CC}' PORT='${PORT}' HPORT='${HPORT}' NODE='${NODE}' bash -s" <<'REMOTE'
+      "IMAGE='${IMAGE}' REALM='${REALM}' SEED='${SEED}' CC='${CC}' PORT='${PORT}' HPORT='${HPORT}' NODE='${NODE}' LOCALE='${LOCALE}' bash -s" <<'REMOTE'
 set -euo pipefail
 docker pull "$IMAGE" >/dev/null
 name="spartan-${CC}"
@@ -71,6 +73,7 @@ docker run -d --name "$name" --restart unless-stopped --network host \
   -e HECATE_REALM="$REALM" \
   -e MACULA_STATION_SEEDS="$SEED" \
   -e HECATE_NODE_NAME="$NODE" \
+  -e HECATE_NODE_LOCALE="$LOCALE" \
   -e HECATE_NODE_HOST=127.0.0.1 \
   -e HECATE_COOKIE="spartan_${CC}" \
   -e HECATE_INGRESS_PORT="$PORT" \
@@ -78,7 +81,7 @@ docker run -d --name "$name" --restart unless-stopped --network host \
   -e HECATE_DATA_DIR=/data \
   -v "${data}:/data" \
   "$IMAGE" >/dev/null
-echo "  ${name} up (host net) ingress :${PORT} health :${HPORT}"
+echo "  ${name} up (${LOCALE}) ingress :${PORT} health :${HPORT}"
 REMOTE
 done
 

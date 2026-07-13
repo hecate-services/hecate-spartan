@@ -17,6 +17,7 @@
 %% Store-backed: hecate_om:boot/1 auto-starts the reckon-db store and its
 %% evoq subscription before start/1 fires.
 -export([store_id/0, data_dir/0, store_indexes/0]).
+-export([locale/0]).
 
 info() ->
     #{
@@ -64,6 +65,16 @@ store_id() ->
 data_dir() ->
     {ok, Dir} = application:get_env(hecate_spartan, data_dir),
     Dir.
+
+%% @doc The capital this node is homed in ("be-brussels"), or `undefined'.
+%% Travels on the facts so a spectator can say where a mind spoke from.
+-spec locale() -> binary() | undefined.
+locale() ->
+    case application:get_env(hecate_spartan, locale) of
+        {ok, L} when is_list(L), L =/= "", L =/= "unknown" -> list_to_binary(L);
+        {ok, L} when is_binary(L), L =/= <<>>              -> L;
+        _                                                  -> undefined
+    end.
 
 %% Secondary indexes for entity-scoped queries: which entity a fact concerns,
 %% and a composite (realm, entity) hash for direct-inbox lookups. Payload

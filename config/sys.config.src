@@ -20,7 +20,13 @@
         {data_dir,       "${HECATE_DATA_DIR}"},
         {event_store_id, hecate_spartan_store},
         {ingress_port,   ${HECATE_INGRESS_PORT}},
-        {health_port,    ${HECATE_HEALTH_PORT}}
+        {health_port,    ${HECATE_HEALTH_PORT}},
+        %% Where this node is: the capital whose station it dials (e.g.
+        %% "be-brussels"). It travels on the entity_announced and agora facts,
+        %% because a home expressed as a service DID means nothing to anyone
+        %% watching — a society spread over eight countries has to be able to
+        %% say WHERE a mind spoke from.
+        {locale,         "${HECATE_NODE_LOCALE}"}
     ]},
 
     {hecate_om, [

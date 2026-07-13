@@ -17,12 +17,16 @@ handle_get(Req0, State) ->
             %% across the whole federation, not just this instance.
             Peers = [#{did => maps:get(did, E),
                        entity_name => maps:get(entity_name, E, null),
-                       home => maps:get(home, E, null)}
+                       home => maps:get(home, E, null),
+                       locale => null_if_undefined(maps:get(locale, E, undefined))}
                      || E <- hecate_spartan_mesh_entities:all()],
             json(200, #{peers => Peers}, Req0, State);
         {error, Reason} ->
             json(401, #{error => Reason}, Req0, State)
     end.
+
+null_if_undefined(undefined) -> null;
+null_if_undefined(V)         -> V.
 
 json(Code, Map, Req0, State) ->
     Req = cowboy_req:reply(Code,

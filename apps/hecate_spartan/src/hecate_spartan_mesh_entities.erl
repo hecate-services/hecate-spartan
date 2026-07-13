@@ -101,6 +101,7 @@ upsert_local(Event, Home) ->
     upsert(#{did => Did,
              entity_name => maps:get(entity_name, Entry),
              home => Home,
+             locale => hecate_spartan_service:locale(),
              registered_at => maps:get(registered_at, Entry, 0),
              last_seen => erlang:system_time(millisecond)}).
 
