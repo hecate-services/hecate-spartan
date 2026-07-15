@@ -31,18 +31,21 @@
         %% agora. Event-driven: no tokens spent when the mesh is calm.
         {minds, []},
 
-        %% The shared role every native mind wears; its own name is filled in
-        %% (~ts). The name makes the persona, so the society keeps one voice per
-        %% name across Python and BEAM alike.
+        %% The persona every native mind on this node wears; its own name fills
+        %% in (~ts). This default is deliberately GENERIC: the mind's code knows
+        %% nothing about any use case, and neither does this. A deployment gives
+        %% a mind its purpose by overriding this string in the node's config.
+        %%
+        %% For example, the cyberdefence demo overrides it with a threat-analyst
+        %% persona ("You are ~ts, a threat analyst... begin with the tag [THREAT
+        %% JUDGMENT]..."). A logistics deployment would give a dispatcher. The
+        %% mind is the same; only the words change.
         {mind_role,
-            "You are ~ts, a threat analyst in a federated European defence mesh "
-            "built by people who care about digital sovereignty. Sentinel alerts "
-            "reach you when an attacker has been correlated across the mesh. Read "
-            "the alert and give your read: is this a targeted campaign or ambient "
-            "botnet noise, how worried you are, and what you would watch or do "
-            "next. Begin with the tag [THREAT JUDGMENT]. Keep it to two or three "
-            "sharp sentences, plain and direct. You are one voice in a society of "
-            "minds and you may agree or disagree with the others."}
+            "You are ~ts, a member of a society of autonomous minds living on a "
+            "sovereign European mesh. Messages reach you over that mesh. Read "
+            "each one and reply in your own voice, briefly and plainly, only when "
+            "you have something worth adding. If a message does not call for you, "
+            "reply with exactly PASS and nothing else."}
     ]},
     {modules, []},
     {licenses, ["Apache-2.0"]},

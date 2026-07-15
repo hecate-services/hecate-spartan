@@ -3,10 +3,15 @@
 %%% This is the event-driven answer to the Python original's busy loop. Where
 %%% that design thinks on a clock whether or not the world moved, and burns tens
 %%% of thousands of tokens auditing itself when it has nothing to do, this mind
-%%% is a supervised gen_server that sits idle at zero cost until a threat fact
-%%% arrives on `spartan/broadcast'. It reasons about that fact once, through
-%%% Melious, posts its judgment to the agora, and goes quiet again. No initiative
-%%% timer, no self-audit spin, no tokens spent when the mesh is calm.
+%%% is a supervised gen_server that sits idle at zero cost until a message
+%%% reaches it over the mesh. It reasons about that message once, through Melious,
+%%% speaks if it has something to say, and goes quiet again. No initiative timer,
+%%% no self-audit spin, no tokens spent when the mesh is calm.
+%%%
+%%% The core is use-case agnostic. It knows nothing about what a message is
+%%% about; the persona in `character' (config) is the only thing that carries a
+%%% purpose. The same mind is a threat analyst, a dispatcher, or a diarist,
+%%% depending entirely on the words it is given to be.
 %%%
 %%% The mind is self-sovereign: it mints its own Ed25519 keypair on first boot,
 %%% keeps it on disk, and returns under the same DID across restarts. It speaks
@@ -52,8 +57,8 @@ handle_info({macula_event, _Ref, _Topic, Payload, _Meta}, St) ->
 handle_info({macula_event_gone, _Ref, _Reason}, St) ->
     self() ! subscribe,
     {noreply, St#st{subref = undefined}};
-handle_info({reasoned, Text}, St) ->
-    _ = post(Text, St),
+handle_info({reasoned, Response}, St) ->
+    _ = maybe_post(Response, St),
     {noreply, St#st{busy = false}};
 handle_info({reasoning_failed, Why}, #st{name = Name} = St) ->
     logger:notice("[spartan_mind] ~ts could not reason: ~p", [Name, Why]),
@@ -82,9 +87,14 @@ retry(St) ->
 
 %% --- reacting ---
 
-%% One thought at a time: while a judgment is in flight we ignore new stimulus.
-%% The sentinel's digest is change-gated, so little is lost, and a mind that
-%% starts three overlapping calls on a burst is a mind that wastes tokens.
+%% A message reaches the mind; it reasons about that message in its own voice
+%% and, if it has something to say, speaks. The mind knows NOTHING about what the
+%% message is about: a cyberattack, a shipment, a greeting. That knowledge lives
+%% entirely in the persona (`character'), which is config. The core is use-case
+%% agnostic.
+%%
+%% One thought at a time: while a reply is in flight we ignore new stimulus, so a
+%% burst does not start overlapping calls and waste tokens.
 maybe_react(_Payload, #st{busy = true} = St) ->
     St;
 maybe_react(Payload, St) when is_map(Payload) ->
@@ -92,11 +102,11 @@ maybe_react(Payload, St) when is_map(Payload) ->
 maybe_react(_Payload, St) ->
     St.
 
-react({ok, Text}, #st{character = Character} = St) ->
+react({ok, Message}, #st{character = Character} = St) ->
     Self = self(),
     _ = spawn(fun() ->
-        case spartan_mind_llm:reason(Character, prompt(Text)) of
-            {ok, Judgment} -> Self ! {reasoned, tag(Judgment)};
+        case spartan_mind_llm:reason(Character, Message) of
+            {ok, Response} -> Self ! {reasoned, Response};
             {error, Why}   -> Self ! {reasoning_failed, Why}
         end
     end),
@@ -104,26 +114,26 @@ react({ok, Text}, #st{character = Character} = St) ->
 react(skip, St) ->
     St.
 
-%% We answer the sentinel's threat alerts and digests, nothing else on the topic.
 stimulus(Fact) ->
-    Body = mget(body, Fact),
-    case is_binary(Body) andalso is_threat(Body) of
-        true  -> {ok, Body};
-        false -> skip
+    case mget(body, Fact) of
+        Body when is_binary(Body), Body =/= <<>> -> {ok, Body};
+        _                                        -> skip
     end.
 
-is_threat(<<"[THREAT", _/binary>>) -> true;
-is_threat(_)                       -> false.
-
-prompt(Text) ->
-    <<"A sentinel alert just reached the society:\n\n", Text/binary,
-      "\n\nGive your read.">>.
-
-%% Carry a tag the Vigil can badge, without duplicating one the model wrote.
-tag(<<"[THREAT", _/binary>> = Judgment) -> Judgment;
-tag(Judgment)                           -> <<"[THREAT JUDGMENT] ", Judgment/binary>>.
-
 %% --- posting to the square ---
+
+%% A mind may decide a message calls for no reply. An empty answer, or the agreed
+%% "PASS", stays unspoken; anything else reaches the square. Whether to speak is
+%% the persona's judgment, not the code's.
+maybe_post(Response, St) ->
+    case worth_saying(Response) of
+        true  -> post(Response, St);
+        false -> ok
+    end.
+
+worth_saying(Response) ->
+    Trimmed = string:trim(Response),
+    Trimmed =/= <<>> andalso string:uppercase(Trimmed) =/= <<"PASS">>.
 
 post(Text, #st{did = Did}) ->
     PostId = binary:encode_hex(crypto:strong_rand_bytes(16), lowercase),
