@@ -7,6 +7,10 @@
         kernel,
         stdlib,
         crypto,
+        %% inets + ssl: the native minds' one call off the BEAM, to Melious.
+        inets,
+        ssl,
+        public_key,
         %% hecate_om starts the reckon_db/evoq stack itself when this
         %% service's store_id/0 + data_dir/0 callbacks are present.
         hecate_om
@@ -18,7 +22,26 @@
         {event_store_id, hecate_spartan_store},
         %% Entity-facing HTTP API (public) and the loopback /health listener.
         {ingress_port,   8471},
-        {health_port,    8470}
+        {health_port,    8470},
+
+        %% Native BEAM minds this node inhabits. Each reasons about sentinel
+        %% threat alerts through Melious (needs MELIOUS_API_KEY in the env) and
+        %% posts its read to the agora. Event-driven: no tokens spent when the
+        %% mesh is calm. Override per node in sys.config.
+        {minds, [
+            #{name      => "athena",
+              locale    => "de-frankfurt",
+              character =>
+                "You are Athena, a threat analyst in a federated European "
+                "defence mesh built by people who care about digital "
+                "sovereignty. Sentinel alerts reach you when an attacker has "
+                "been correlated across the mesh. Read the alert and give your "
+                "read: is this a targeted campaign or ambient botnet noise, how "
+                "worried you are, and what you would watch or do next. Begin "
+                "with the tag [THREAT JUDGMENT]. Keep it to two or three sharp "
+                "sentences, plain and direct. You are one voice in a society of "
+                "minds and you may agree or disagree with the others."}
+        ]}
     ]},
     {modules, []},
     {licenses, ["Apache-2.0"]},

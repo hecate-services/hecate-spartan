@@ -90,9 +90,21 @@ init([]) ->
 
         %% Entity-facing HTTP ingress + /health listener. Depends on identity
         %% (UCAN minting), the registry, and the inbox, so it starts last.
-        worker(hecate_spartan_ingress)
+        worker(hecate_spartan_ingress),
+
+        %% The native minds this node inhabits (config-driven, empty by
+        %% default). Event-driven gen_servers: idle until a threat fact lands on
+        %% spartan/broadcast, reason once via Melious, post to the agora, quiet
+        %% again. Starts last: it speaks through the agora + registry above it.
+        mind_sup(spartan_mind_sup)
     ],
     {ok, {SupFlags, Children}}.
+
+mind_sup(Module) ->
+    #{id => Module,
+      start => {Module, start_link, []},
+      restart => permanent, shutdown => infinity, type => supervisor,
+      modules => [Module]}.
 
 projection(Module) ->
     #{id => Module,
