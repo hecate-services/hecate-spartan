@@ -91,7 +91,7 @@ content_wins_over_reasoning_when_present_test() ->
 
 gemini_functioncall_is_a_tool_call_test() ->
     Parts = [#{<<"functionCall">> => #{<<"name">> => <<"speak">>,
-                                       <<"args">> => #{<<"body">> => <<"No.">>}}],
+                                       <<"args">> => #{<<"body">> => <<"No.">>}}}],
     ?assertEqual({<<>>, [#{name => <<"speak">>, args => #{<<"body">> => <<"No.">>}}]},
                  spartan_mind_llm:gemini_interpret(Parts)).
 

@@ -1,17 +1,19 @@
-%%% @doc The one place a mind reaches off the BEAM to think. Two backends, one
-%%% per mind, chosen by HECATE_MIND_BACKEND (the decoupled-identity path: a
-%%% mind's engine is data, not baked in):
+%%% @doc Where a mind reaches off the BEAM to think. A mind's engine is data
+%%% (HECATE_MIND_BACKEND), not baked in: the same Soul can think with any of
+%%% several providers. Splitting a society across backends halves the concurrent
+%%% load on each AND gives real cognitive diversity (different engines, different
+%%% families of voice), the deepest antidote to sycophantic convergence.
 %%%
-%%%   - melious : sovereign-EU broker, OpenAI-compatible. One key
-%%%     (MELIOUS_API_KEY). Flaky under concurrent load, so retries with
-%%%     exponential backoff + jitter.
-%%%   - gemini  : Google generateContent. A POOL of keys (GEMINI_API_KEYS,
-%%%     comma-separated); rotates through them per call and on failure, so per
-%%%     key rate limits and exhaustion self-heal. Rotation is the retry.
+%%% Backends:
+%%%   - melious : sovereign-EU broker, OpenAI-compatible. MELIOUS_API_KEY.
+%%%   - groq    : fast, OpenAI-compatible, gpt-oss model. GROQ_API_KEYS.
+%%%   - gemini  : Google generateContent (different shape). GEMINI_API_KEYS.
 %%%
-%%% Splitting a society across both halves the concurrent load on each AND gives
-%%% real cognitive diversity (different engines, different voices), the deepest
-%%% antidote to sycophantic convergence.
+%%% Every backend takes a POOL of keys (comma-separated; a lone key is a pool of
+%%% one) and rotates through them per call and on failure, with exponential
+%%% backoff + jitter, so per key rate limits and provider bad-windows self-heal
+%%% and a society does not retry in lockstep. Adding another OpenAI-compatible
+%%% provider is a line in backend_config/0.
 -module(spartan_mind_llm).
 
 -export([reason/2, reason_messages/1, reason_messages/2]).
@@ -19,21 +21,18 @@
 
 -define(MELIOUS_URL, "https://api.melious.ai/v1/chat/completions").
 -define(MELIOUS_MODEL, <<"qwen3.5-9b">>).
+-define(GROQ_URL, "https://api.groq.com/openai/v1/chat/completions").
+-define(GROQ_MODEL, <<"openai/gpt-oss-20b">>).
 -define(GEMINI_MODEL, "gemini-3-flash-preview").
 -define(GEMINI_URL,
         "https://generativelanguage.googleapis.com/v1beta/models/"
         ?GEMINI_MODEL ":generateContent").
--define(TIMEOUT_MS, 120000).
 
-%% Melious retries transient failures (400 "malformed", unparseable 200s) with
-%% exponential backoff + jitter so a society does not retry in lockstep.
+-define(TIMEOUT_MS, 120000).
+-define(MAX_TOKENS, 500).
 -define(ATTEMPTS, 6).
 -define(BASE_BACKOFF_MS, 400).
 -define(JITTER_MS, 500).
-
-%% Temperature is temperament: higher = more varied and willing to diverge (an
-%% antidote to mode-collapse); lower = measured. Per node via
-%% HECATE_MIND_TEMPERATURE, else app-env, else this default.
 -define(DEFAULT_TEMP, 0.7).
 
 %% ===================================================================
@@ -58,15 +57,15 @@ reason_messages(Messages, _Model) ->
         {error, _} = E                -> E
     end.
 
-%% @doc Reason with tools offered. Returns the mind's private text (its thought,
-%% which may be empty), the tool calls it chose, and the token cost. Dispatches
-%% to the mind's backend.
+%% @doc Reason with tools offered, on the mind's backend. Returns the mind's
+%% private text (may be empty), the tool calls it chose, and the token cost.
 -spec reason_tools([map()], [map()]) ->
     {ok, {binary(), [map()], non_neg_integer()}} | {error, term()}.
 reason_tools(Messages, Tools) ->
-    case backend() of
-        gemini  -> gemini_reason(Messages, Tools);
-        melious -> melious_reason(Messages, Tools)
+    C = backend_config(),
+    case keys(C) of
+        []   -> {error, no_api_key};
+        Keys -> send(C, body(C, Messages, Tools), keyseq(Keys, ?ATTEMPTS), 1)
     end.
 
 -spec reason_tools([map()], [map()], binary()) ->
@@ -74,69 +73,88 @@ reason_tools(Messages, Tools) ->
 reason_tools(Messages, Tools, _Model) ->
     reason_tools(Messages, Tools).
 
-backend() ->
+backend_config() ->
     case os:getenv("HECATE_MIND_BACKEND") of
-        "gemini" -> gemini;
-        _Other   -> melious
+        "gemini" -> #{fmt => gemini, url => ?GEMINI_URL, keyenv => "GEMINI_API_KEYS"};
+        "groq"   -> #{fmt => openai, url => ?GROQ_URL, model => ?GROQ_MODEL,
+                      keyenv => "GROQ_API_KEYS", label => "groq"};
+        _Melious -> #{fmt => openai, url => ?MELIOUS_URL, model => ?MELIOUS_MODEL,
+                      keyenv => "MELIOUS_API_KEY", label => "melious"}
     end.
 
 %% ===================================================================
-%% Melious backend (OpenAI-compatible, one key, backoff+jitter retry)
+%% The shared send loop: rotate the key pool, backoff+jitter on failure
 %% ===================================================================
 
-melious_reason(Messages, Tools) ->
-    case os:getenv("MELIOUS_API_KEY") of
-        false -> {error, no_api_key};
-        ""    -> {error, no_api_key};
-        Key   -> melious_call(Key, Messages, Tools)
+send(_C, _Body, [], _Attempt) ->
+    {error, all_attempts_failed};
+send(C, Body, [Key | Rest], Attempt) ->
+    case once(C, Body, Key) of
+        {ok, _} = Ok ->
+            Ok;
+        {error, Why} when Rest =:= [] ->
+            {error, Why};
+        {error, Why} ->
+            Delay = (?BASE_BACKOFF_MS bsl min(Attempt - 1, 5)) + rand:uniform(?JITTER_MS),
+            logger:info("[spartan_mind_llm] ~s transient (~p); retry in ~bms",
+                        [maps:get(label, C, "gemini"), Why, Delay]),
+            timer:sleep(Delay),
+            send(C, Body, Rest, Attempt + 1)
     end.
 
-melious_call(Key, Messages, Tools) ->
-    Body = jsx:encode(with_tools(#{
-        <<"model">>       => ?MELIOUS_MODEL,
-        <<"temperature">> => temperature(),
-        <<"max_tokens">>  => 400,
-        <<"messages">>    => Messages
-    }, Tools)),
-    melious_attempt(Body, Key, ?ATTEMPTS).
+once(#{fmt := openai, url := Url}, Body, Key) ->
+    http_do({Url, [{"authorization", "Bearer " ++ Key}], "application/json", Body},
+            fun openai_parse/1);
+once(#{fmt := gemini, url := Url}, Body, Key) ->
+    http_do({Url, [{"x-goog-api-key", Key}], "application/json", Body},
+            fun gemini_parse/1).
 
-melious_attempt(Body, Key, N) ->
-    Request = {?MELIOUS_URL, [{"authorization", "Bearer " ++ Key}],
-               "application/json", Body},
+http_do(Request, ParseFun) ->
     case httpc:request(post, Request, http_opts(), [{body_format, binary}]) of
-        {ok, {{_, 200, _}, _RH, Resp}}  -> melious_on_ok(melious_parse(Resp), Body, Key, N);
-        {ok, {{_, Code, _}, _RH, Resp}} -> melious_retry(Body, Key, N, {http, Code, snippet(Resp)});
-        {error, Reason}                 -> melious_retry(Body, Key, N, Reason)
+        {ok, {{_, 200, _}, _RH, Resp}}  -> ParseFun(Resp);
+        {ok, {{_, Code, _}, _RH, Resp}} -> {error, {http, Code, snippet(Resp)}};
+        {error, Reason}                 -> {error, Reason}
     end.
 
-melious_on_ok({ok, _} = Ok, _Body, _Key, _N) ->
-    Ok;
-melious_on_ok({error, bad_response}, Body, Key, N) ->
-    melious_retry(Body, Key, N, bad_response).
+%% A shuffled pool cycled to ?ATTEMPTS entries: many keys rotate to fresh ones,
+%% a lone key is retried in place (its provider's failover may route elsewhere).
+keyseq(Keys, N) ->
+    Shuffled = shuffle(Keys),
+    lists:sublist(lists:append(lists:duplicate((N div length(Shuffled)) + 1, Shuffled)), N).
 
-melious_retry(_Body, _Key, 1, Why) ->
-    {error, Why};
-melious_retry(Body, Key, N, Why) ->
-    Delay = (?BASE_BACKOFF_MS bsl (?ATTEMPTS - N)) + rand:uniform(?JITTER_MS),
-    logger:info("[spartan_mind_llm] melious transient (~p); retry in ~bms (~b left)",
-                [Why, Delay, N - 1]),
-    timer:sleep(Delay),
-    melious_attempt(Body, Key, N - 1).
+keys(#{keyenv := Env}) ->
+    case os:getenv(Env) of
+        false -> [];
+        ""    -> [];
+        S     -> [K || Part <- string:tokens(S, ","), (K = string:trim(Part)) =/= ""]
+    end.
+
+body(#{fmt := openai, model := Model}, Messages, Tools) ->
+    jsx:encode(with_tools(#{<<"model">>       => Model,
+                            <<"temperature">> => temperature(),
+                            <<"max_tokens">>  => ?MAX_TOKENS,
+                            <<"messages">>    => Messages}, Tools));
+body(#{fmt := gemini}, Messages, Tools) ->
+    gemini_body(Messages, Tools).
 
 with_tools(Base, [])    -> Base;
 with_tools(Base, Tools) -> Base#{<<"tools">> => Tools, <<"tool_choice">> => <<"auto">>}.
 
-melious_parse(Resp) ->
+%% ===================================================================
+%% OpenAI-compatible parsing (Melious, Groq)
+%% ===================================================================
+
+openai_parse(Resp) ->
     try
         Json = jsx:decode(Resp, [return_maps]),
         [Choice | _] = maps:get(<<"choices">>, Json),
         {Text, Calls} = interpret_message(maps:get(<<"message">>, Choice)),
-        {ok, {Text, Calls, melious_tokens(Json)}}
+        {ok, {Text, Calls, openai_tokens(Json)}}
     catch _:_ ->
         {error, bad_response}
     end.
 
-melious_tokens(Json) ->
+openai_tokens(Json) ->
     case maps:get(<<"usage">>, Json, undefined) of
         #{<<"total_tokens">> := T} when is_integer(T) -> T;
         _NoUsage                                      -> 0
@@ -150,8 +168,8 @@ interpret_message(Msg) ->
                             maps:get(<<"tool_calls">>, Msg, [])),
     {thought_text(Msg), Calls}.
 
-%% qwen3.5-9b is a reasoning model: content is null on a tool turn, the thought
-%% is in reasoning_content. Prefer content, else reasoning; never lose it.
+%% A reasoning model (qwen) puts content at null on a tool turn and the thought
+%% in reasoning_content. Prefer content, else reasoning; never lose it.
 thought_text(Msg) ->
     case maps:get(<<"content">>, Msg, null) of
         C when is_binary(C), C =/= <<>> -> string:trim(C);
@@ -177,53 +195,14 @@ decode_args(_) ->
     #{}.
 
 %% ===================================================================
-%% Gemini backend (generateContent, key-pool rotation)
+%% Gemini backend (generateContent shape)
 %% ===================================================================
-
-gemini_reason(Messages, Tools) ->
-    case gemini_pool() of
-        []   -> {error, no_api_key};
-        Pool -> gemini_send(gemini_body(Messages, Tools), shuffle(Pool))
-    end.
-
-%% Try each key in a shuffled pool once; rotate on any failure. With ~10 keys a
-%% fresh key sidesteps per key rate limits and exhaustion, so this both retries
-%% and load-balances.
-gemini_send(_Body, []) ->
-    {error, gemini_all_keys_failed};
-gemini_send(Body, [Key | Rest]) ->
-    case gemini_once(Body, Key) of
-        {ok, _} = Ok ->
-            Ok;
-        {error, Why} when Rest =:= [] ->
-            {error, Why};
-        {error, Why} ->
-            logger:info("[spartan_mind_llm] gemini key failed (~p); rotating (~b left)",
-                        [Why, length(Rest)]),
-            timer:sleep(rand:uniform(?JITTER_MS)),
-            gemini_send(Body, Rest)
-    end.
-
-gemini_once(Body, Key) ->
-    Request = {?GEMINI_URL, [{"x-goog-api-key", Key}], "application/json", Body},
-    case httpc:request(post, Request, http_opts(), [{body_format, binary}]) of
-        {ok, {{_, 200, _}, _RH, Resp}}  -> gemini_parse(Resp);
-        {ok, {{_, Code, _}, _RH, Resp}} -> {error, {http, Code, snippet(Resp)}};
-        {error, Reason}                 -> {error, Reason}
-    end.
-
-gemini_pool() ->
-    case os:getenv("GEMINI_API_KEYS") of
-        false -> [];
-        ""    -> [];
-        S     -> [K || Part <- string:tokens(S, ","), (K = string:trim(Part)) =/= ""]
-    end.
 
 gemini_body(Messages, Tools) ->
     {Systems, Contents} = partition_messages(Messages),
     Base = #{<<"contents">> => Contents,
              <<"generationConfig">> => #{<<"temperature">> => temperature(),
-                                         <<"maxOutputTokens">> => 400}},
+                                         <<"maxOutputTokens">> => ?MAX_TOKENS}},
     jsx:encode(add_gemini_tools(add_system(Base, Systems), Tools)).
 
 partition_messages(Messages) ->
@@ -247,10 +226,7 @@ add_system(Base, Systems) ->
 add_gemini_tools(Base, []) ->
     Base;
 add_gemini_tools(Base, Tools) ->
-    Base#{<<"tools">> => [#{<<"functionDeclarations">> => [fn_decl(T) || T <- Tools]}]}.
-
-fn_decl(T) ->
-    mget(function, T).
+    Base#{<<"tools">> => [#{<<"functionDeclarations">> => [mget(function, T) || T <- Tools]}]}.
 
 gemini_parse(Resp) ->
     try
@@ -263,9 +239,8 @@ gemini_parse(Resp) ->
         {error, bad_response}
     end.
 
-%% @doc Turn Gemini content parts into private text + tool calls. Exported for
-%% testing. functionCall.args is already a decoded object (unlike OpenAI's JSON
-%% string), so it maps straight to our internal shape.
+%% @doc Gemini content parts -> private text + tool calls. functionCall.args is
+%% already a decoded object. Exported for testing.
 -spec gemini_interpret([map()]) -> {binary(), [map()]}.
 gemini_interpret(Parts) ->
     Texts = [T || #{<<"text">> := T} <- Parts, is_binary(T)],
@@ -280,14 +255,12 @@ gemini_tokens(Json) ->
     end.
 
 %% ===================================================================
-%% Shared
+%% Shared helpers
 %% ===================================================================
 
 http_opts() ->
     [{timeout, ?TIMEOUT_MS}, {ssl, tls_opts()}].
 
-%% Verify the peer against the system trust store; fall back only if this OTP
-%% cannot produce cacerts (it can, on 25+).
 tls_opts() ->
     try
         [{verify, verify_peer},
@@ -317,8 +290,6 @@ parse_temp_int(S) ->
         _NotInt                   -> ?DEFAULT_TEMP
     end.
 
-%% Random permutation of the key pool, so rotation starts at a different key each
-%% call and load spreads across the pool.
 shuffle(List) ->
     [K || {_, K} <- lists:sort([{rand:uniform(), X} || X <- List])].
 
