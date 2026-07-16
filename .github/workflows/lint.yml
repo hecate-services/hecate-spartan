@@ -11,7 +11,7 @@ jobs:
   check:
     runs-on: ubuntu-latest
     container:
-      image: erlang:27
+      image: erlang:28
     steps:
       - uses: actions/checkout@v4
       - name: Elvis lint

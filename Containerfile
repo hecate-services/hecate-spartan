@@ -5,13 +5,13 @@
 #
 # Multi-stage: the builder compiles the macula_quic NIF FROM SOURCE
 # (MACULA_FORCE_SOURCE_BUILD=1) so we always get the 5.1.0 connect-hang fix,
-# never a fetched precompiled artifact. Runtime is a bare Alpine (same 3.22 as
-# erlang:27-alpine) with the release's bundled ERTS.
+# never a fetched precompiled artifact. Runtime is a bare Alpine (same 3.23 as
+# erlang:28-alpine) with the release's bundled ERTS.
 
 #----------------------------------------------------------------------
 # Stage 1 — builder: Erlang + Rust + rebar3 + deps + release
 #----------------------------------------------------------------------
-FROM docker.io/erlang:27-alpine AS builder
+FROM docker.io/erlang:28-alpine AS builder
 WORKDIR /build
 
 # Build toolchain. Rust via rustup (Alpine's rustc lags what macula's Rust deps
@@ -47,7 +47,7 @@ RUN rebar3 as prod release
 #----------------------------------------------------------------------
 # Stage 2 — runtime: slim Alpine + the assembled release
 #----------------------------------------------------------------------
-FROM docker.io/alpine:3.22
+FROM docker.io/alpine:3.23
 RUN apk add --no-cache ncurses-libs libstdc++ libgcc openssl ca-certificates curl
 WORKDIR /app
 COPY --from=builder /build/_build/prod/rel/hecate_spartan ./
