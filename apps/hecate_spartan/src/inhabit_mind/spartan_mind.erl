@@ -24,10 +24,19 @@
 
 -export([start_link/1]).
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2, terminate/2]).
+-export([decide/5]).   %% the pre-LLM engagement gate, pure, exported for tests
 
--define(TOPIC, <<"spartan/broadcast">>).
+%% A mind hears two things over the mesh: the broadcast channel (society-wide
+%% stimulus, e.g. a sentinel digest) and the agora (every mind's public speech).
+%% Hearing the agora is what lets a society converse rather than sit in parallel
+%% silence.
+-define(TOPICS, [<<"spartan/broadcast">>, <<"spartan/agora">>]).
 -define(RESUB_MS, 5000).
 -define(CHRONICLE_WINDOW, 8).
+
+%% A mind reasons at most once per cooldown, so a lively square cannot spiral
+%% into a token-burn loop. Tunable per node via app-env `mind_cooldown_ms'.
+-define(DEFAULT_COOLDOWN_MS, 15000).
 
 -record(st, {name            :: binary(),
              did             :: binary(),
@@ -38,8 +47,9 @@
              scratchpad = <<>> :: binary(),
              chronicle  = []   :: [map()],
              tokens_used = 0   :: non_neg_integer(),
+             last_reasoned = 0 :: integer(),
              locale     :: binary() | undefined,
-             subref     :: reference() | undefined,
+             subs = []  :: [reference()],
              busy = false :: boolean()}).
 
 start_link(Spec) ->
@@ -67,7 +77,7 @@ handle_info({macula_event, _Ref, _Topic, Payload, _Meta}, St) ->
     {noreply, maybe_react(Payload, St)};
 handle_info({macula_event_gone, _Ref, _Reason}, St) ->
     self() ! subscribe,
-    {noreply, St#st{subref = undefined}};
+    {noreply, St#st{subs = []}};
 handle_info({reasoned, Heard, Text, ToolCalls, Tokens}, St) ->
     St1 = apply_tool_calls(ToolCalls, St),
     St2 = remember_turn(Heard, Text, ToolCalls, Tokens, St1),
@@ -83,19 +93,30 @@ terminate(_Reason, _St) -> ok.
 %% --- subscription (the same pattern federation_agora uses) ---
 
 do_subscribe(St) ->
-    subscribe_with(hecate_om:macula_client(), hecate_om_identity:realm(), St).
+    subscribe_all(hecate_om:macula_client(), hecate_om_identity:realm(), St).
 
-subscribe_with({ok, Pool}, {ok, Realm}, St) ->
-    on_sub(catch macula:subscribe(Pool, Realm, ?TOPIC, self()), St);
-subscribe_with(_Client, _Realm, St) ->
+subscribe_all({ok, Pool}, {ok, Realm}, St) ->
+    Refs = lists:filtermap(fun(T) -> sub_one(Pool, Realm, T) end, ?TOPICS),
+    keep_or_retry(Refs, St);
+subscribe_all(_Client, _Realm, St) ->
     retry(St).
 
-on_sub({ok, Ref}, St) -> St#st{subref = Ref};
-on_sub(_Other, St)    -> retry(St).
+sub_one(Pool, Realm, Topic) ->
+    case catch macula:subscribe(Pool, Realm, Topic, self()) of
+        {ok, Ref} -> {true, Ref};
+        _Failed   -> false
+    end.
+
+%% All topics or none: a partial subscribe would leave a mind half-deaf, so
+%% retry until every topic is heard.
+keep_or_retry(Refs, St) when length(Refs) =:= length(?TOPICS) ->
+    St#st{subs = Refs};
+keep_or_retry(_Partial, St) ->
+    retry(St).
 
 retry(St) ->
     erlang:send_after(?RESUB_MS, self(), subscribe),
-    St#st{subref = undefined}.
+    St#st{subs = []}.
 
 %% --- reacting ---
 
@@ -105,7 +126,7 @@ retry(St) ->
 maybe_react(_Payload, #st{busy = true} = St) ->
     St;
 maybe_react(Payload, St) when is_map(Payload) ->
-    react(stimulus(Payload), St);
+    react(stimulus(Payload, St), St);
 maybe_react(_Payload, St) ->
     St.
 
@@ -114,7 +135,7 @@ react({ok, Message}, St) ->
     Messages = build_context(Message, St),
     Tools = mind_tools:manifest(),
     _ = spawn(fun() -> run_reasoning(Self, Message, Messages, Tools) end),
-    St#st{busy = true};
+    St#st{busy = true, last_reasoned = erlang:system_time(millisecond)};
 react(skip, St) ->
     St.
 
@@ -126,11 +147,31 @@ run_reasoning(Self, Message, Messages, Tools) ->
             Self ! {reasoning_failed, Why}
     end.
 
-stimulus(Fact) ->
-    case mget(body, Fact) of
-        Body when is_binary(Body), Body =/= <<>> -> {ok, Body};
-        _                                        -> skip
-    end.
+%% Decide, cheaply and BEFORE spending a Melious call, whether a fact is worth
+%% reasoning about. A mind ignores its own speech (it hears the agora, where its
+%% own posts return), and reasons at most once per cooldown so a lively square
+%% cannot spiral into a token-burn loop. Its own PASS-judgment handles the rest.
+stimulus(Fact, #st{did = Did, last_reasoned = Last}) ->
+    decide(Fact, Did, Last, erlang:system_time(millisecond), cooldown_ms()).
+
+%% Pure so it can be tested without a live mind. Exported for that reason.
+-spec decide(map(), binary(), integer(), integer(), integer()) ->
+    {ok, binary()} | skip.
+decide(Fact, MyDid, LastReasoned, Now, Cooldown) ->
+    heard(mget(from, Fact) =:= MyDid, Fact, Now - LastReasoned >= Cooldown).
+
+heard(true, _Fact, _Ready) ->
+    skip;
+heard(false, Fact, Ready) ->
+    consider(mget(body, Fact), Ready).
+
+consider(Body, true) when is_binary(Body), Body =/= <<>> ->
+    {ok, Body};
+consider(_Body, _Ready) ->
+    skip.
+
+cooldown_ms() ->
+    application:get_env(hecate_spartan, mind_cooldown_ms, ?DEFAULT_COOLDOWN_MS).
 
 %% --- the 4-layer context ---
 
