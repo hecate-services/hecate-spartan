@@ -48,6 +48,12 @@
 %% broker simultaneously. A few seconds of pacing is natural for a society.
 -define(STAGGER_MS, 5000).
 
+%% Long-term memory: at boot, seed the semantic index from up to this many of
+%% the mind's most recent past turns; on each turn, recall this many memories
+%% nearest in meaning to the stimulus into the mind's context.
+-define(MEMORY_SEED_CAP, 200).
+-define(RECALL_K, 3).
+
 -record(st, {name            :: binary(),
              did             :: binary(),
              priv            :: binary(),
@@ -61,6 +67,7 @@
              last_reasoned = 0 :: integer(),
              locale     :: binary() | undefined,
              subs = []  :: [reference()],
+             memory       :: mind_memory:mem() | undefined,
              busy = false :: boolean()}).
 
 start_link(Spec) ->
@@ -72,6 +79,10 @@ init(#{name := Name, character := Brief} = Spec) ->
     Soul = load_or_birth(Did, Name, Brief, Pub),
     Chronicle = load_chronicle(Did),
     self() ! subscribe,
+    %% Open long-term memory off the init path: it starts the embedding model,
+    %% which in production loads an ONNX model, and must not block the mind's
+    %% boot. Until it is ready the mind simply recalls nothing.
+    self() ! setup_memory,
     Locale = maps:get(locale, Spec, hecate_spartan_service:locale()),
     logger:info("[spartan_mind] ~ts awake as ~ts (~b turns recalled)",
                 [Name, Did, length(Chronicle)]),
@@ -84,6 +95,8 @@ handle_cast(_Msg, St)        -> {noreply, St}.
 
 handle_info(subscribe, St) ->
     {noreply, do_subscribe(St)};
+handle_info(setup_memory, St) ->
+    {noreply, setup_memory(St)};
 handle_info({macula_event, _Ref, ?MISSION_TOPIC, Payload, _Meta}, St) ->
     {noreply, update_mission(Payload, St)};
 handle_info({macula_event, _Ref, _Topic, Payload, _Meta}, St) ->
@@ -189,17 +202,22 @@ cooldown_ms() ->
 
 %% --- the 4-layer context ---
 
-build_context(Message, #st{soul = Soul, chronicle = Chron} = St) ->
+build_context(Message, #st{soul = Soul, chronicle = Chron, memory = Mem} = St) ->
     SoulMap = soul_state:to_map(Soul),
     context_assembler:render(#{
         soul       => SoulMap,
         trigger    => Message,
         chronicle  => Chron,
         scratchpad => St#st.scratchpad,
-        memories   => [],
+        memories   => recall_memories(Mem, Message),
         mission    => render_missions(St#st.missions),
-        hud        => hud(SoulMap, Chron, St#st.tokens_used)
+        hud        => hud(Chron, St#st.tokens_used, mem_size(Mem))
     }).
+
+%% Recall the memories nearest in meaning to this stimulus. Best-effort: an
+%% unopened or unavailable memory recalls nothing.
+recall_memories(undefined, _Message) -> [];
+recall_memories(Mem, Message)        -> mind_memory:recall(Mem, Message, ?RECALL_K).
 
 %% --- the society's work: live, multi-domain, injected over the mesh ---
 
@@ -242,14 +260,18 @@ seed_from_app_env(Text) -> #{<<"primary">> => Text}.
 %% the tokens it has spent so far, and how many committees it has convened that
 %% are still deliberating. The token count is the clock the sleep cycle and
 %% self-alerts run on in later waves.
-hud(_SoulMap, Chron, Tokens) ->
+hud(Chron, Tokens, MemSize) ->
     iolist_to_binary(["[HUD] turn=", integer_to_binary(length(Chron)),
                       " backends=", spartan_mind_llm:provider_labels(),
                       " tokens=", integer_to_binary(Tokens),
+                      " mem=", integer_to_binary(MemSize),
                       " caps=[] alerts=none drones=", integer_to_binary(drone_count())]).
 
 drone_count() ->
     try convene_committee:active_count() catch _:_ -> 0 end.
+
+mem_size(undefined) -> 0;
+mem_size(Mem)       -> mind_memory:size(Mem).
 
 %% --- acting: execute the mind's tool calls ---
 
@@ -289,7 +311,14 @@ remember_turn(Heard, Thought, ToolCalls, Tokens, #st{chronicle = Chron} = St) ->
              actions => [maps:get(name, C, <<"?">>) || C <- ToolCalls]},
     _ = persist_turn(St#st.did, Turn, Tokens),
     St#st{chronicle = tail(?CHRONICLE_WINDOW, Chron ++ [Turn]),
-          tokens_used = St#st.tokens_used + Tokens}.
+          tokens_used = St#st.tokens_used + Tokens,
+          memory = remember_turn_in_memory(St#st.memory, Heard, Thought)}.
+
+%% Fold a lived turn into long-term memory. Only turns the mind actually reasoned
+%% about are worth recalling later; a silent PASS (no thought) is skipped.
+remember_turn_in_memory(undefined, _Heard, _Thought) -> undefined;
+remember_turn_in_memory(Mem, _Heard, <<>>)           -> Mem;
+remember_turn_in_memory(Mem, Heard, Thought)         -> mind_memory:remember(Mem, compose_memory(Heard, Thought)).
 
 persist_turn(Did, #{heard := H, thought := T, actions := A}, Tokens) ->
     TurnId = binary:encode_hex(crypto:strong_rand_bytes(16), lowercase),
@@ -322,6 +351,39 @@ at(Map) ->
         N when is_integer(N) -> N;
         _NotAnInt            -> 0
     end.
+
+%% --- long-term memory: open, and seed from the mind's own replayed history ---
+
+%% Open the mind's semantic memory and seed it from its past turns, so a reboot
+%% does not give the mind amnesia: what it lived through before is recallable
+%% again. Best-effort; a mind whose substrate is unavailable runs without it.
+setup_memory(#st{did = Did, name = Name} = St) ->
+    case mind_memory:open(Did) of
+        {ok, Mem0} ->
+            Mem = mind_memory:seed(Mem0, recent_turn_texts(Did)),
+            logger:info("[spartan_mind] ~ts memory ready (~b recalled)",
+                        [Name, mind_memory:size(Mem)]),
+            St#st{memory = Mem};
+        {error, Why} ->
+            logger:notice("[spartan_mind] ~ts has no long-term memory (~p)", [Name, Why]),
+            St
+    end.
+
+%% This mind's most recent substantive turns (a thought was formed), oldest
+%% first, capped, each rendered as one memory string.
+recent_turn_texts(Did) ->
+    Mine = [E || E <- turn_taken_v1:replay(),
+                 mget(did, E) =:= Did, is_binary(mget(thought, E)), mget(thought, E) =/= <<>>],
+    Sorted = lists:sort(fun(A, B) -> at(A) =< at(B) end, Mine),
+    [compose_memory(mget(heard, E), mget(thought, E)) || E <- tail(?MEMORY_SEED_CAP, Sorted)].
+
+%% One memory string per turn: the stimulus and the mind's own reading of it, so
+%% recall on a similar stimulus later surfaces how the mind thought last time.
+compose_memory(Heard, Thought) ->
+    iolist_to_binary(["When you heard: ", safe(Heard), " you thought: ", safe(Thought)]).
+
+safe(B) when is_binary(B) -> B;
+safe(_NotBinary)          -> <<>>.
 
 %% --- the Soul: born once, rebuilt every boot ---
 

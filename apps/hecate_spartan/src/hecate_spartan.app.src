@@ -13,7 +13,11 @@
         public_key,
         %% hecate_om starts the reckon_db/evoq stack itself when this
         %% service's store_id/0 + data_dir/0 callbacks are present.
-        hecate_om
+        hecate_om,
+        %% A mind's long-term memory substrate: their sup trees provide the
+        %% embedding model server and per-mind vector indices.
+        hecate_embed,
+        hecate_vector
     ]},
     {env, [
         %% On-disk root for this service's reckon-db store. sys.config.src
