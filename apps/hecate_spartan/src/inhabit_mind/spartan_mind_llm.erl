@@ -22,6 +22,11 @@
 -define(ATTEMPTS, 4).
 -define(RETRY_MS, 500).
 
+%% Temperature is temperament: higher = more varied, surprising, willing to
+%% diverge (an antidote to sycophantic mode-collapse); lower = measured and
+%% terse. Per node via HECATE_MIND_TEMPERATURE, else app-env, else this default.
+-define(DEFAULT_TEMP, 0.7).
+
 %% @doc The flat two-message form: a persona and a single stimulus. Kept for
 %% callers that have no assembled context; delegates to the message-list form.
 -spec reason(binary(), binary()) -> {ok, binary()} | {error, term()}.
@@ -69,11 +74,31 @@ do_request(Messages, Tools, Model) ->
 call(Key, Model, Messages, Tools) ->
     Body = jsx:encode(with_tools(#{
         <<"model">>       => Model,
-        <<"temperature">> => 0.4,
+        <<"temperature">> => temperature(),
         <<"max_tokens">>  => 400,
         <<"messages">>    => Messages
     }, Tools)),
     attempt(Body, Key, ?ATTEMPTS).
+
+%% The mind's temperament. Read once per call so a running mind can be retuned
+%% by restarting with a new value; no nested try (elvis), parse defensively.
+temperature() ->
+    case os:getenv("HECATE_MIND_TEMPERATURE") of
+        V when is_list(V), V =/= "" -> parse_temp(V);
+        _Unset                      -> application:get_env(hecate_spartan, mind_temperature, ?DEFAULT_TEMP)
+    end.
+
+parse_temp(S) ->
+    case string:to_float(S) of
+        {F, _} when is_float(F) -> F;
+        _NotFloat               -> parse_temp_int(S)
+    end.
+
+parse_temp_int(S) ->
+    case string:to_integer(S) of
+        {I, _} when is_integer(I) -> float(I);
+        _NotInt                   -> ?DEFAULT_TEMP
+    end.
 
 attempt(Body, Key, N) ->
     Request = {?URL, [{"authorization", "Bearer " ++ Key}],
