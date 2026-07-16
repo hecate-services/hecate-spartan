@@ -30,7 +30,12 @@
 %% stimulus, e.g. a sentinel digest) and the agora (every mind's public speech).
 %% Hearing the agora is what lets a society converse rather than sit in parallel
 %% silence.
--define(TOPICS, [<<"spartan/broadcast">>, <<"spartan/agora">>]).
+%% A mission is not stimulus to react to; it is standing context. Published as a
+%% fact on this topic (#{domain, directive}); a mind updates its mission set live
+%% (empty directive clears that domain). This is how the society's work is
+%% injected at runtime, from an operator or a use-case service.
+-define(MISSION_TOPIC, <<"spartan/mission">>).
+-define(TOPICS, [<<"spartan/broadcast">>, <<"spartan/agora">>, ?MISSION_TOPIC]).
 -define(RESUB_MS, 5000).
 -define(CHRONICLE_WINDOW, 8).
 
@@ -51,6 +56,7 @@
              soul            :: soul_state:state(),
              scratchpad = <<>> :: binary(),
              chronicle  = []   :: [map()],
+             missions   = #{}  :: #{binary() => binary()},
              tokens_used = 0   :: non_neg_integer(),
              last_reasoned = 0 :: integer(),
              locale     :: binary() | undefined,
@@ -71,13 +77,15 @@ init(#{name := Name, character := Brief} = Spec) ->
                 [Name, Did, length(Chronicle)]),
     {ok, #st{name = Name, did = Did, priv = Priv, pub = Pub,
              genesis_version = genesis_version(), soul = Soul,
-             chronicle = Chronicle, locale = Locale}}.
+             chronicle = Chronicle, missions = seed_missions(), locale = Locale}}.
 
 handle_call(_Req, _From, St) -> {reply, {error, unknown_call}, St}.
 handle_cast(_Msg, St)        -> {noreply, St}.
 
 handle_info(subscribe, St) ->
     {noreply, do_subscribe(St)};
+handle_info({macula_event, _Ref, ?MISSION_TOPIC, Payload, _Meta}, St) ->
+    {noreply, update_mission(Payload, St)};
 handle_info({macula_event, _Ref, _Topic, Payload, _Meta}, St) ->
     {noreply, maybe_react(Payload, St)};
 handle_info({macula_event_gone, _Ref, _Reason}, St) ->
@@ -189,8 +197,46 @@ build_context(Message, #st{soul = Soul, chronicle = Chron} = St) ->
         chronicle  => Chron,
         scratchpad => St#st.scratchpad,
         memories   => [],
+        mission    => render_missions(St#st.missions),
         hud        => hud(SoulMap, Chron, St#st.tokens_used)
     }).
+
+%% --- the society's work: live, multi-domain, injected over the mesh ---
+
+%% A mission fact (#{domain, directive}) updates one domain of the society's
+%% work. An empty directive clears that domain. Missions are standing context,
+%% never a stimulus to reason about.
+update_mission(Fact, #st{missions = M, name = Name} = St) when is_map(Fact) ->
+    St#st{missions = set_mission(mget(domain, Fact), mget(directive, Fact), M, Name)};
+update_mission(_Payload, St) ->
+    St.
+
+set_mission(Domain, _Dir, M, _Name) when not is_binary(Domain) ->
+    M;
+set_mission(Domain, Dir, M, Name) when is_binary(Dir), Dir =/= <<>> ->
+    logger:info("[spartan_mind] ~ts accepts mission: ~ts", [Name, Domain]),
+    M#{Domain => Dir};
+set_mission(Domain, _Empty, M, Name) ->
+    logger:info("[spartan_mind] ~ts clears mission: ~ts", [Name, Domain]),
+    maps:remove(Domain, M).
+
+render_missions(M) when map_size(M) =:= 0 ->
+    <<>>;
+render_missions(M) ->
+    iolist_to_binary(lists:join(<<"\n\n">>,
+        [[D, <<":\n">>, Dir] || {D, Dir} <- maps:to_list(M)])).
+
+%% The boot seed: a deployment may set an initial mission via env so a mind has
+%% work the instant it wakes, before any runtime fact arrives. Runtime facts on
+%% ?MISSION_TOPIC add, replace, or clear domains from there.
+seed_missions() ->
+    case os:getenv("HECATE_SOCIETY_MISSION") of
+        V when is_list(V), V =/= "" -> #{<<"primary">> => unicode:characters_to_binary(V)};
+        _Unset -> seed_from_app_env(application:get_env(hecate_spartan, society_mission, <<>>))
+    end.
+
+seed_from_app_env(<<>>) -> #{};
+seed_from_app_env(Text) -> #{<<"primary">> => Text}.
 
 %% Proprioception: the mind's turn count, which backend it thinks with, and the
 %% tokens it has spent so far. The token count is the clock the sleep cycle and

@@ -47,6 +47,13 @@
         %% Per node via HECATE_MIND_TEMPERATURE so each mind can differ.
         {mind_temperature, 0.7},
 
+        %% The society's work: this deployment's use cases (cyberdefence, news,
+        %% ...), shared by every mind and rendered fresh each turn. Identity (the
+        %% founding brief) is who a mind IS; the mission is what the society is
+        %% tasked with now. Empty by default (the code is use-case agnostic); a
+        %% deployment provides it via HECATE_SOCIETY_MISSION.
+        {society_mission, <<>>},
+
         %% The persona every native mind on this node wears; its own name fills
         %% in (~ts). This default is deliberately GENERIC: the mind's code knows
         %% nothing about any use case, and neither does this. A deployment gives

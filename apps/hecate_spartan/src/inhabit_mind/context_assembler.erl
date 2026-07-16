@@ -53,10 +53,21 @@ render(#{soul := Soul} = Ctx) ->
     Scratchpad = maps:get(scratchpad, Ctx, <<>>),
     Memories   = maps:get(memories, Ctx, []),
     Hud        = maps:get(hud, Ctx, <<>>),
-    [sys(l1(Soul)), sys(l2(Soul))]
+    Mission    = maps:get(mission, Ctx, <<>>),
+    [sys(l1(Soul))]
+        ++ mission_band(Mission)
+        ++ [sys(l2(Soul))]
         ++ l3(Chronicle)
         ++ [sys(l4(Soul, Scratchpad, Memories, Hud)),
             #{role => <<"user">>, content => Trigger}].
+
+%% The society's work, distinct from a mind's identity. Deployment data (this
+%% deployment's use cases), rendered fresh each turn between the genesis core
+%% and the mind's own Soul; empty when the mesh has no assigned mission.
+mission_band(<<>>) ->
+    [];
+mission_band(Mission) ->
+    [sys(iolist_to_binary([<<"THE SOCIETY'S WORK\n">>, Mission]))].
 
 %% ===================================================================
 %% L1 — genesis core
