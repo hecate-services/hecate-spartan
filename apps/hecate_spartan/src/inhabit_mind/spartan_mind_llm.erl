@@ -16,11 +16,14 @@
 -define(TIMEOUT_MS, 120000).
 
 %% Melious is an 11-provider failover broker: the SAME valid request is
-%% sometimes 400-rejected by whichever backend it lands on, then accepted on a
-%% retry that routes elsewhere. Observed ~2-in-3 rejection on the tools schema,
-%% so a mind must retry transient failures rather than fall silent.
--define(ATTEMPTS, 4).
--define(RETRY_MS, 500).
+%% sometimes 400-rejected ("malformed") or answered with an unparseable 200 by
+%% whichever backend it lands on, then accepted on a retry that routes
+%% elsewhere. It is worst under concurrent load (a whole society reasoning at
+%% once), so a mind retries transient failures with EXPONENTIAL BACKOFF plus
+%% JITTER, so the society does not retry in lockstep and re-hammer the broker.
+-define(ATTEMPTS, 6).
+-define(BASE_BACKOFF_MS, 400).
+-define(JITTER_MS, 500).
 
 %% Temperature is temperament: higher = more varied, surprising, willing to
 %% diverge (an antidote to sycophantic mode-collapse); lower = measured and
@@ -105,17 +108,26 @@ attempt(Body, Key, N) ->
                "application/json", Body},
     HttpOpts = [{timeout, ?TIMEOUT_MS}, {ssl, tls_opts()}],
     case httpc:request(post, Request, HttpOpts, [{body_format, binary}]) of
-        {ok, {{_, 200, _}, _RH, Resp}}  -> parse(Resp);
+        {ok, {{_, 200, _}, _RH, Resp}}  -> on_ok(parse(Resp), Body, Key, N);
         {ok, {{_, Code, _}, _RH, Resp}} -> retry(Body, Key, N, {http, Code, snippet(Resp)});
         {error, Reason}                 -> retry(Body, Key, N, Reason)
     end.
 
+%% A 200 whose body will not parse (empty choices, an error carried in a 200, a
+%% shape a provider returned that we do not understand) is transient too: retry
+%% it, it usually lands on a healthier provider next time.
+on_ok({ok, _} = Ok, _Body, _Key, _N) ->
+    Ok;
+on_ok({error, bad_response}, Body, Key, N) ->
+    retry(Body, Key, N, bad_response).
+
 retry(_Body, _Key, 1, Why) ->
     {error, Why};
 retry(Body, Key, N, Why) ->
-    logger:info("[spartan_mind_llm] transient failure (~p); ~b attempts left",
-                [Why, N - 1]),
-    timer:sleep(?RETRY_MS),
+    Delay = (?BASE_BACKOFF_MS bsl (?ATTEMPTS - N)) + rand:uniform(?JITTER_MS),
+    logger:info("[spartan_mind_llm] transient failure (~p); retry in ~bms (~b left)",
+                [Why, Delay, N - 1]),
+    timer:sleep(Delay),
     attempt(Body, Key, N - 1).
 
 with_tools(Base, [])    -> Base;

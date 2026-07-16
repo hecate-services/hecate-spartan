@@ -38,6 +38,11 @@
 %% into a token-burn loop. Tunable per node via app-env `mind_cooldown_ms'.
 -define(DEFAULT_COOLDOWN_MS, 15000).
 
+%% When a broadcast lands, the whole society reacts at once. Spread the reasoning
+%% over a few seconds so eight minds do not hit the (load-sensitive) Melious
+%% broker simultaneously. A few seconds of pacing is natural for a society.
+-define(STAGGER_MS, 5000).
+
 -record(st, {name            :: binary(),
              did             :: binary(),
              priv            :: binary(),
@@ -140,6 +145,7 @@ react(skip, St) ->
     St.
 
 run_reasoning(Self, Message, Messages, Tools) ->
+    timer:sleep(rand:uniform(?STAGGER_MS)),
     case spartan_mind_llm:reason_tools(Messages, Tools) of
         {ok, {Text, ToolCalls, Tokens}} ->
             Self ! {reasoned, Message, Text, ToolCalls, Tokens};
