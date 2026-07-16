@@ -23,6 +23,10 @@
 -define(MELIOUS_MODEL, <<"qwen3.5-9b">>).
 -define(GROQ_URL, "https://api.groq.com/openai/v1/chat/completions").
 -define(GROQ_MODEL, <<"openai/gpt-oss-20b">>).
+-define(CEREBRAS_URL, "https://api.cerebras.ai/v1/chat/completions").
+-define(CEREBRAS_MODEL, <<"zai-glm-4.7">>).
+-define(MISTRAL_URL, "https://api.mistral.ai/v1/chat/completions").
+-define(MISTRAL_MODEL, <<"mistral-small-latest">>).
 -define(GEMINI_MODEL, "gemini-3-flash-preview").
 -define(GEMINI_URL,
         "https://generativelanguage.googleapis.com/v1beta/models/"
@@ -78,6 +82,10 @@ backend_config() ->
         "gemini" -> #{fmt => gemini, url => ?GEMINI_URL, keyenv => "GEMINI_API_KEYS"};
         "groq"   -> #{fmt => openai, url => ?GROQ_URL, model => ?GROQ_MODEL,
                       keyenv => "GROQ_API_KEYS", label => "groq"};
+        "cerebras" -> #{fmt => openai, url => ?CEREBRAS_URL, model => ?CEREBRAS_MODEL,
+                      keyenv => "CEREBRAS_API_KEYS", label => "cerebras"};
+        "mistral" -> #{fmt => openai, url => ?MISTRAL_URL, model => ?MISTRAL_MODEL,
+                      keyenv => "MISTRAL_API_KEYS", label => "mistral"};
         _Melious -> #{fmt => openai, url => ?MELIOUS_URL, model => ?MELIOUS_MODEL,
                       keyenv => "MELIOUS_API_KEY", label => "melious"}
     end.
