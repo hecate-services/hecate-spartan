@@ -58,8 +58,9 @@ render(#{soul := Soul} = Ctx) ->
         ++ mission_band(Mission)
         ++ [sys(l2(Soul))]
         ++ l3(Chronicle)
-        ++ [sys(l4(Soul, Scratchpad, Memories, Hud)),
-            #{role => <<"user">>, content => Trigger}].
+        ++ [sys(l4(Soul, Scratchpad, Memories, Hud))]
+        ++ mission_reminder(Mission)
+        ++ [#{role => <<"user">>, content => Trigger}].
 
 %% The society's work, distinct from a mind's identity. Deployment data (this
 %% deployment's use cases), rendered fresh each turn between the genesis core
@@ -68,6 +69,16 @@ mission_band(<<>>) ->
     [];
 mission_band(Mission) ->
     [sys(iolist_to_binary([<<"THE SOCIETY'S WORK\n">>, Mission]))].
+
+%% A short imperative repeated as the LAST thing before the trigger, so the work
+%% is what the model reads just before it answers, not a distant preamble a
+%% strong temperament can drown out. Generic (works for any mission).
+mission_reminder(<<>>) ->
+    [];
+mission_reminder(_Mission) ->
+    [sys(<<"Before you answer: your work is set above. Act on what is before you. "
+           "Say concretely what should be DONE and how urgent it is, not merely "
+           "what it means. A response no one can act on is decoration.">>)].
 
 %% ===================================================================
 %% L1 — genesis core
