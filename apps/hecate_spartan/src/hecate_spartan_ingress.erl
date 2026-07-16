@@ -1,11 +1,12 @@
-%%% @doc Cowboy listeners for hecate-spartan.
+%%% @doc Cowboy listener for hecate-spartan's entity-facing API.
 %%%
-%%% Two listeners:
-%%%   - the entity-facing API on `ingress_port' (public — entities reach it
-%%%     outbound over the network),
-%%%   - `/health' on `health_port', loopback only, for the container
-%%%     HEALTHCHECK. hecate_om ships the handler but starts no listener, so we
-%%%     wire it here.
+%%% The entity-facing API on `ingress_port' (public — entities reach it outbound
+%%% over the network).
+%%%
+%%% `/health' is NOT started here: hecate_om (>= 0.5) now owns the health
+%%% listener (`hecate_om_health' on `health_port', loopback, for the container
+%%% HEALTHCHECK). Starting our own here too collided on the port and crash-looped
+%%% the node. `hecate_om_health_handler' is still the handler hecate_om serves.
 -module(hecate_spartan_ingress).
 -behaviour(gen_server).
 
@@ -13,7 +14,6 @@
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2, terminate/2]).
 
 -define(API_LISTENER, hecate_spartan_api).
--define(HEALTH_LISTENER, hecate_spartan_health).
 
 start_link() ->
     gen_server:start_link({local, ?MODULE}, ?MODULE, [], []).
@@ -21,7 +21,6 @@ start_link() ->
 init([]) ->
     process_flag(trap_exit, true),
     ApiPort = env(ingress_port, 8471),
-    HealthPort = env(health_port, 8470),
     %% idle_timeout => infinity, or every entity goes deaf once a minute.
     %%
     %% /v1/receive is an SSE stream: the server pushes, the client says nothing
@@ -35,11 +34,8 @@ init([]) ->
                                  [{port, ApiPort}],
                                  #{env => #{dispatch => api_dispatch()},
                                    idle_timeout => infinity}),
-    {ok, _} = cowboy:start_clear(?HEALTH_LISTENER,
-                                 [{ip, {127, 0, 0, 1}}, {port, HealthPort}],
-                                 #{env => #{dispatch => health_dispatch()}}),
-    logger:info("hecate_spartan ingress up: API :~p, health 127.0.0.1:~p",
-                [ApiPort, HealthPort]),
+    logger:info("hecate_spartan ingress up: API :~p (health owned by hecate_om)",
+                [ApiPort]),
     {ok, #{}}.
 
 handle_call(_Req, _From, S) -> {reply, ok, S}.
@@ -48,7 +44,6 @@ handle_info(_Info, S)       -> {noreply, S}.
 
 terminate(_Reason, _S) ->
     _ = cowboy:stop_listener(?API_LISTENER),
-    _ = cowboy:stop_listener(?HEALTH_LISTENER),
     ok.
 
 %% --- routes ---
@@ -65,13 +60,6 @@ api_dispatch() ->
             {"/v1/activity",     report_activity_api,   []},
             {"/v1/artifact",     artifact_api,          []},
             {"/v1/artifact/:hash", artifact_api,        []}
-        ]}
-    ]).
-
-health_dispatch() ->
-    cowboy_router:compile([
-        {'_', [
-            {"/health", hecate_om_health_handler, []}
         ]}
     ]).
 
