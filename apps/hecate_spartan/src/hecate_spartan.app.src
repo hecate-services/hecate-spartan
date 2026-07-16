@@ -31,6 +31,12 @@
         %% agora. Event-driven: no tokens spent when the mesh is calm.
         {minds, []},
 
+        %% The L1 genesis-core version a mind is born into. Recorded on
+        %% mind_born_v1 so a Soul knows which suit it first awoke in. Bump when
+        %% the genesis core (the compiled-in "how to be a mind here" prelude)
+        %% changes in a way a mind should be aware of.
+        {genesis_version, <<"1">>},
+
         %% The persona every native mind on this node wears; its own name fills
         %% in (~ts). This default is deliberately GENERIC: the mind's code knows
         %% nothing about any use case, and neither does this. A deployment gives

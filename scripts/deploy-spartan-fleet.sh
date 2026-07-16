@@ -2,8 +2,18 @@
 # Deploy the hecate-spartan node fleet across the EU station partition: one node
 # per country, each an outbound macula client dialing its own capital's station.
 # All share one realm, so their mesh topics coincide and the federation is one
-# society spread over eight countries. The minds (Gene's Spartan entities) run
-# separately and dial a node's ingress; no LLM key ever reaches a beam node.
+# society spread over eight countries.
+#
+# TWO MODELS OF MIND, don't confuse them:
+#   - EXTERNAL minds (Gene's Python Spartans): run off-fleet, dial a node's
+#     ingress over HTTP. Cognition and the LLM key live on the external host, so
+#     THIS fleet carries no LLM key -- the nodes are only the mesh commons.
+#   - RESIDENT minds (BEAM-native spartan_mind): run ON the node. Cognition is
+#     in-process, so their Melious key necessarily lives on the node. This fleet
+#     does NOT enable them (HECATE_SPARTAN_MINDS + MELIOUS_API_KEY are unset
+#     below), keeping keys off the beam boxes. To run a resident mind, prefer a
+#     dedicated/throwaway node (see scripts/run-throwaway-mind.sh), not this
+#     fleet, unless you deliberately choose to place a key here.
 #
 # TWO NODES PER HOST. The four beam boxes carry eight nodes, so each mind is
 # homed in its own capital rather than sharing one. That needs three things to

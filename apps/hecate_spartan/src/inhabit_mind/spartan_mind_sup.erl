@@ -38,7 +38,20 @@ spec(Name) ->
     Bin = unicode:characters_to_binary(Name),
     #{name => Bin, character => render_role(Bin)}.
 
+%% A mind's founding brief reaches it as data, not code. HECATE_MIND_ROLE, if
+%% set, is used verbatim as the brief (write the mind's purpose there, naming it
+%% however you like). Otherwise the app-env `mind_role' template is rendered
+%% with the mind's name. Either way the brief becomes the mind's mind_born_v1
+%% founding_brief; the core stays agnostic.
 render_role(Name) ->
+    case os:getenv("HECATE_MIND_ROLE") of
+        Brief when is_list(Brief), Brief =/= "" ->
+            unicode:characters_to_binary(Brief);
+        _Unset ->
+            render_template(Name)
+    end.
+
+render_template(Name) ->
     Tmpl = application:get_env(hecate_spartan, mind_role, "You are ~ts."),
     unicode:characters_to_binary(io_lib:format(Tmpl, [Name])).
 

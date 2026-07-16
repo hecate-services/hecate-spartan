@@ -4,19 +4,21 @@
 %%% that design thinks on a clock whether or not the world moved, and burns tens
 %%% of thousands of tokens auditing itself when it has nothing to do, this mind
 %%% is a supervised gen_server that sits idle at zero cost until a message
-%%% reaches it over the mesh. It reasons about that message once, through Melious,
-%%% speaks if it has something to say, and goes quiet again. No initiative timer,
-%%% no self-audit spin, no tokens spent when the mesh is calm.
+%%% reaches it over the mesh. It reasons about that message once, speaks if it
+%%% has something to say, and goes quiet again.
 %%%
 %%% The core is use-case agnostic. It knows nothing about what a message is
-%%% about; the persona in `character' (config) is the only thing that carries a
-%%% purpose. The same mind is a threat analyst, a dispatcher, or a diarist,
-%%% depending entirely on the words it is given to be.
+%%% about; the mind's purpose lives in its founding brief, which is DATA carried
+%%% on its mind_born_v1 event, not code. The same mind is a threat analyst, a
+%%% dispatcher, or a diarist, depending entirely on the brief it was born with.
 %%%
-%%% The mind is self-sovereign: it mints its own Ed25519 keypair on first boot,
-%%% keeps it on disk, and returns under the same DID across restarts. It speaks
-%%% to the square through the same `publish_to_agora' command any entity uses, so
-%%% its words carry provenance and land in reckon-db like everyone else's.
+%%% The mind is a self. On first boot it is born: it mints an Ed25519 keypair,
+%%% seals the private half to disk, and records a mind_born_v1 into its Soul
+%%% stream. On every boot after, it rebuilds its Soul by replaying that stream,
+%%% so who it is survives any single run. It reasons over a 4-layer context
+%%% (genesis core, Soul archive, chronicle, frontier) assembled each turn, and
+%%% speaks to the square through the same publish_to_agora command any entity
+%%% uses, so its words carry provenance and land in reckon-db like everyone's.
 -module(spartan_mind).
 -behaviour(gen_server).
 
@@ -25,12 +27,17 @@
 
 -define(TOPIC, <<"spartan/broadcast">>).
 -define(RESUB_MS, 5000).
+-define(CHRONICLE_WINDOW, 8).
 
--record(st, {name       :: binary(),
-             did        :: binary(),
-             priv       :: binary(),
-             pub        :: binary(),
-             character  :: binary(),
+-record(st, {name            :: binary(),
+             did             :: binary(),
+             priv            :: binary(),
+             pub             :: binary(),
+             genesis_version :: binary(),
+             soul            :: soul_state:state(),
+             scratchpad = <<>> :: binary(),
+             chronicle  = []   :: [map()],
+             tokens_used = 0   :: non_neg_integer(),
              locale     :: binary() | undefined,
              subref     :: reference() | undefined,
              busy = false :: boolean()}).
@@ -38,14 +45,18 @@
 start_link(Spec) ->
     gen_server:start_link(?MODULE, Spec, []).
 
-init(#{name := Name, character := Character} = Spec) ->
+init(#{name := Name, character := Brief} = Spec) ->
     {Did, Priv, Pub} = identity(Name),
     _ = register_self(Name, Did, Pub),
+    Soul = load_or_birth(Did, Name, Brief, Pub),
+    Chronicle = load_chronicle(Did),
     self() ! subscribe,
     Locale = maps:get(locale, Spec, hecate_spartan_service:locale()),
-    logger:info("[spartan_mind] ~ts awake as ~ts", [Name, Did]),
+    logger:info("[spartan_mind] ~ts awake as ~ts (~b turns recalled)",
+                [Name, Did, length(Chronicle)]),
     {ok, #st{name = Name, did = Did, priv = Priv, pub = Pub,
-             character = Character, locale = Locale}}.
+             genesis_version = genesis_version(), soul = Soul,
+             chronicle = Chronicle, locale = Locale}}.
 
 handle_call(_Req, _From, St) -> {reply, {error, unknown_call}, St}.
 handle_cast(_Msg, St)        -> {noreply, St}.
@@ -57,9 +68,10 @@ handle_info({macula_event, _Ref, _Topic, Payload, _Meta}, St) ->
 handle_info({macula_event_gone, _Ref, _Reason}, St) ->
     self() ! subscribe,
     {noreply, St#st{subref = undefined}};
-handle_info({reasoned, Response}, St) ->
-    _ = maybe_post(Response, St),
-    {noreply, St#st{busy = false}};
+handle_info({reasoned, Heard, Text, ToolCalls, Tokens}, St) ->
+    St1 = apply_tool_calls(ToolCalls, St),
+    St2 = remember_turn(Heard, Text, ToolCalls, Tokens, St1),
+    {noreply, St2#st{busy = false}};
 handle_info({reasoning_failed, Why}, #st{name = Name} = St) ->
     logger:notice("[spartan_mind] ~ts could not reason: ~p", [Name, Why]),
     {noreply, St#st{busy = false}};
@@ -87,14 +99,9 @@ retry(St) ->
 
 %% --- reacting ---
 
-%% A message reaches the mind; it reasons about that message in its own voice
-%% and, if it has something to say, speaks. The mind knows NOTHING about what the
-%% message is about: a cyberattack, a shipment, a greeting. That knowledge lives
-%% entirely in the persona (`character'), which is config. The core is use-case
-%% agnostic.
-%%
-%% One thought at a time: while a reply is in flight we ignore new stimulus, so a
-%% burst does not start overlapping calls and waste tokens.
+%% A message reaches the mind; it assembles its full context and reasons about
+%% that message in its own voice. One thought at a time: while a reply is in
+%% flight we ignore new stimulus, so a burst does not start overlapping calls.
 maybe_react(_Payload, #st{busy = true} = St) ->
     St;
 maybe_react(Payload, St) when is_map(Payload) ->
@@ -102,17 +109,22 @@ maybe_react(Payload, St) when is_map(Payload) ->
 maybe_react(_Payload, St) ->
     St.
 
-react({ok, Message}, #st{character = Character} = St) ->
+react({ok, Message}, St) ->
     Self = self(),
-    _ = spawn(fun() ->
-        case spartan_mind_llm:reason(Character, Message) of
-            {ok, Response} -> Self ! {reasoned, Response};
-            {error, Why}   -> Self ! {reasoning_failed, Why}
-        end
-    end),
+    Messages = build_context(Message, St),
+    Tools = mind_tools:manifest(),
+    _ = spawn(fun() -> run_reasoning(Self, Message, Messages, Tools) end),
     St#st{busy = true};
 react(skip, St) ->
     St.
+
+run_reasoning(Self, Message, Messages, Tools) ->
+    case spartan_mind_llm:reason_tools(Messages, Tools) of
+        {ok, {Text, ToolCalls, Tokens}} ->
+            Self ! {reasoned, Message, Text, ToolCalls, Tokens};
+        {error, Why} ->
+            Self ! {reasoning_failed, Why}
+    end.
 
 stimulus(Fact) ->
     case mget(body, Fact) of
@@ -120,26 +132,141 @@ stimulus(Fact) ->
         _                                        -> skip
     end.
 
-%% --- posting to the square ---
+%% --- the 4-layer context ---
 
-%% A mind may decide a message calls for no reply. An empty answer, or the agreed
-%% "PASS", stays unspoken; anything else reaches the square. Whether to speak is
-%% the persona's judgment, not the code's.
-maybe_post(Response, St) ->
-    case worth_saying(Response) of
-        true  -> post(Response, St);
-        false -> ok
+build_context(Message, #st{soul = Soul, chronicle = Chron} = St) ->
+    SoulMap = soul_state:to_map(Soul),
+    context_assembler:render(#{
+        soul       => SoulMap,
+        trigger    => Message,
+        chronicle  => Chron,
+        scratchpad => St#st.scratchpad,
+        memories   => [],
+        hud        => hud(SoulMap, Chron, St#st.tokens_used)
+    }).
+
+%% Proprioception: the mind's turn count, which backend it thinks with, and the
+%% tokens it has spent so far. The token count is the clock the sleep cycle and
+%% self-alerts run on in later waves.
+hud(SoulMap, Chron, Tokens) ->
+    Backend = backend_name(maps:get(backend, SoulMap, undefined)),
+    iolist_to_binary(["[HUD] turn=", integer_to_binary(length(Chron)),
+                      " backend=", Backend,
+                      " tokens=", integer_to_binary(Tokens),
+                      " caps=[] alerts=none drones=0"]).
+
+backend_name(undefined) -> <<"qwen3.5-9b">>;
+backend_name(Model)     -> Model.
+
+%% --- acting: execute the mind's tool calls ---
+
+%% Text is the mind's private thought; only tool calls act. Speaking happens
+%% when the mind calls `speak', never automatically. Self-authorship folds the
+%% emitted events straight back into the cached Soul, so the next turn's context
+%% reflects the change without a reboot.
+apply_tool_calls(ToolCalls, St) ->
+    lists:foldl(fun apply_tool_call/2, St, ToolCalls).
+
+apply_tool_call(Call, #st{name = Name, did = Did} = St) ->
+    case mind_tools:execute(Call, #{did => Did}) of
+        {ok, Effect} ->
+            apply_effect(Effect, St);
+        {error, Reason} ->
+            logger:notice("[spartan_mind] ~ts tool ~p failed: ~p",
+                          [Name, maps:get(name, Call, <<"?">>), Reason]),
+            St
     end.
 
-worth_saying(Response) ->
-    Trimmed = string:trim(Response),
-    Trimmed =/= <<>> andalso string:uppercase(Trimmed) =/= <<"PASS">>.
+apply_effect(Effect, #st{soul = Soul, scratchpad = Scratch} = St) ->
+    SoulEvents = maps:get(soul_events, Effect, []),
+    St#st{soul = fold_into(SoulEvents, Soul),
+          scratchpad = maps:get(scratchpad, Effect, Scratch)}.
 
-post(Text, #st{did = Did}) ->
-    PostId = binary:encode_hex(crypto:strong_rand_bytes(16), lowercase),
-    Cmd = publish_to_agora_v1:new(PostId, Did, Text, undefined,
-                                  erlang:system_time(millisecond)),
-    maybe_publish_to_agora:dispatch(Cmd).
+fold_into(Events, Soul) ->
+    lists:foldl(fun(E, S) -> soul_state:apply_event(S, E) end, Soul, Events).
+
+%% --- the chronicle: an event-sourced window of lived turns ---
+
+%% Every turn is recorded, silent ones included. It is persisted as a
+%% turn_taken_v1 event (fire and tolerate: a mind that cannot write its history
+%% still lives) and kept in the in-memory window for the next turn's context.
+%% Tokens accumulate on the running clock the HUD shows.
+remember_turn(Heard, Thought, ToolCalls, Tokens, #st{chronicle = Chron} = St) ->
+    Turn = #{heard => Heard, thought => Thought,
+             actions => [maps:get(name, C, <<"?">>) || C <- ToolCalls]},
+    _ = persist_turn(St#st.did, Turn, Tokens),
+    St#st{chronicle = tail(?CHRONICLE_WINDOW, Chron ++ [Turn]),
+          tokens_used = St#st.tokens_used + Tokens}.
+
+persist_turn(Did, #{heard := H, thought := T, actions := A}, Tokens) ->
+    TurnId = binary:encode_hex(crypto:strong_rand_bytes(16), lowercase),
+    Params = #{turn_id => TurnId, did => Did, heard => H, thought => T,
+               actions => A, tokens => Tokens},
+    {ok, Cmd} = record_turn_v1:new(Params),
+    catch maybe_record_turn:dispatch(Cmd).
+
+%% At boot, rebuild the recent window from the log: all turns on this node,
+%% kept to this mind's own DID, oldest first, last window.
+load_chronicle(Did) ->
+    Mine = [turn_row(E) || E <- turn_taken_v1:replay(), mget(did, E) =:= Did],
+    Sorted = lists:sort(fun(A, B) -> at(A) =< at(B) end, Mine),
+    tail(?CHRONICLE_WINDOW, Sorted).
+
+turn_row(Event) ->
+    #{heard   => mget(heard, Event),
+      thought => mget(thought, Event),
+      actions => actions_of(Event),
+      at      => at(Event)}.
+
+actions_of(Event) ->
+    case mget(actions, Event) of
+        List when is_list(List) -> List;
+        _NotAList               -> []
+    end.
+
+at(Map) ->
+    case mget(at, Map) of
+        N when is_integer(N) -> N;
+        _NotAnInt            -> 0
+    end.
+
+%% --- the Soul: born once, rebuilt every boot ---
+
+%% Replay the Soul stream. Empty means unborn: give birth (record mind_born_v1),
+%% then fold the result. If the store is unreachable at boot, fall back to an
+%% in-memory (unpersisted) self from the brief, so the mind can still act; the
+%% next boot with a live store will persist a birth.
+load_or_birth(Did, Name, Brief, Pub) ->
+    case read_soul(Did) of
+        []     -> birth(Did, Name, Brief, Pub);
+        Events -> fold_soul(Events)
+    end.
+
+read_soul(Did) ->
+    Stream = soul_aggregate:stream_id(Did),
+    case catch evoq_event_store:read_all(hecate_spartan_service:store_id(),
+                                         Stream, forward) of
+        {ok, Events} when is_list(Events) -> Events;
+        _Unavailable                      -> []
+    end.
+
+birth(Did, Name, Brief, Pub) ->
+    Params = #{did => Did, name => Name, founding_brief => Brief,
+               pubkey => Pub, genesis_version => genesis_version()},
+    {ok, Cmd} = bear_mind_v1:new(Params),
+    case catch maybe_bear_mind:dispatch(Cmd) of
+        {ok, _V, Events} when is_list(Events) ->
+            logger:info("[spartan_mind] ~ts born", [Name]),
+            fold_soul(Events);
+        Other ->
+            logger:notice("[spartan_mind] ~ts unborn (store unavailable: ~p); "
+                          "acting from an unpersisted self", [Name, Other]),
+            fold_soul([mind_born_v1:to_map(mind_born_v1:new(Params))])
+    end.
+
+fold_soul(Events) ->
+    lists:foldl(fun(E, Acc) -> soul_state:apply_event(Acc, E) end,
+                soul_state:new(<<>>), Events).
 
 %% --- self-sovereign identity ---
 
@@ -162,6 +289,19 @@ did(Pub) ->
 register_self(Name, Did, Pub) ->
     Cmd = register_entity_v1:new(Name, Did, Pub, erlang:system_time(millisecond)),
     catch maybe_register_entity:dispatch(Cmd).
+
+%% --- helpers ---
+
+genesis_version() ->
+    case application:get_env(hecate_spartan, genesis_version) of
+        {ok, V} when is_binary(V) -> V;
+        {ok, V} when is_list(V)   -> unicode:characters_to_binary(V);
+        _                         -> <<"1">>
+    end.
+
+tail(N, List) ->
+    Len = length(List),
+    lists:nthtail(max(0, Len - N), List).
 
 mget(AtomKey, Map) ->
     maps:get(AtomKey, Map,
