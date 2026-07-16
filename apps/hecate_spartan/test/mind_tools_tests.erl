@@ -87,6 +87,26 @@ content_wins_over_reasoning_when_present_test() ->
     ?assertEqual({<<"final answer">>, []},
                  spartan_mind_llm:interpret_message(Msg)).
 
+%% --- the Gemini parser (functionCall parts, args already an object) ---
+
+gemini_functioncall_is_a_tool_call_test() ->
+    Parts = [#{<<"functionCall">> => #{<<"name">> => <<"speak">>,
+                                       <<"args">> => #{<<"body">> => <<"No.">>}}],
+    ?assertEqual({<<>>, [#{name => <<"speak">>, args => #{<<"body">> => <<"No.">>}}]},
+                 spartan_mind_llm:gemini_interpret(Parts)).
+
+gemini_text_part_is_thought_test() ->
+    ?assertEqual({<<"thinking">>, []},
+                 spartan_mind_llm:gemini_interpret([#{<<"text">> => <<" thinking ">>}])).
+
+gemini_text_and_call_coexist_test() ->
+    Parts = [#{<<"text">> => <<"I judge:">>},
+             #{<<"functionCall">> => #{<<"name">> => <<"reflect">>,
+                                       <<"args">> => #{<<"entry">> => <<"x">>}}}],
+    {Text, [Call]} = spartan_mind_llm:gemini_interpret(Parts),
+    ?assertEqual(<<"I judge:">>, Text),
+    ?assertEqual(<<"reflect">>, maps:get(name, Call)).
+
 malformed_arguments_degrade_to_empty_test() ->
     Msg = #{<<"tool_calls">> => [fn(<<"speak">>, <<"not json">>)]},
     {_, [Call]} = spartan_mind_llm:interpret_message(Msg),
