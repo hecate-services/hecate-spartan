@@ -92,6 +92,12 @@ init([]) ->
         %% (UCAN minting), the registry, and the inbox, so it starts last.
         worker(hecate_spartan_ingress),
 
+        %% Committees a mind convenes: ephemeral, bounded deliberations among
+        %% drone voices, each ending in a scribe's report to the agora. Its own
+        %% dynamic supervisor, started before the minds so a mind can convene
+        %% into it the moment it wakes.
+        mind_sup(committee_sup),
+
         %% The native minds this node inhabits (config-driven, empty by
         %% default). Event-driven gen_servers: idle until a threat fact lands on
         %% spartan/broadcast, reason once via Melious, post to the agora, quiet

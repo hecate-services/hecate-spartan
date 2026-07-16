@@ -16,7 +16,8 @@ manifest_is_encodable_test() ->
     Names = [tool_name(T) || T <- Manifest],
     ?assert(lists:member(<<"speak">>, Names)),
     ?assert(lists:member(<<"amend_charter">>, Names)),
-    ?assert(lists:member(<<"set_scratchpad">>, Names)).
+    ?assert(lists:member(<<"set_scratchpad">>, Names)),
+    ?assert(lists:member(<<"convene_committee">>, Names)).
 
 tool_name(#{function := #{name := N}}) -> N.
 
@@ -41,6 +42,11 @@ unknown_tool_is_rejected_test() ->
 empty_speak_is_rejected_before_dispatch_test() ->
     Call = #{name => <<"speak">>, args => #{<<"body">> => <<>>}},
     ?assertEqual({error, empty_body},
+                 mind_tools:execute(Call, #{did => <<"did:x">>})).
+
+empty_committee_question_is_rejected_before_convening_test() ->
+    Call = #{name => <<"convene_committee">>, args => #{<<"question">> => <<>>}},
+    ?assertEqual({error, empty_question},
                  mind_tools:execute(Call, #{did => <<"did:x">>})).
 
 %% --- the tool-call protocol parser ---

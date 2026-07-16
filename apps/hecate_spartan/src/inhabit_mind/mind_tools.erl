@@ -69,7 +69,19 @@ manifest() ->
           <<"Rewrite your scratchpad: rough, disposable thinking. Nothing here "
             "is durable; use it to work something out.">>,
           #{<<"content">> => str(<<"the new full text of your scratchpad">>)},
-          [<<"content">>])
+          [<<"content">>]),
+
+     tool(<<"convene_committee">>,
+          <<"Convene a committee: spawn a handful of drone minds that deliberate "
+            "a question among themselves, each through a different lens, and "
+            "whose scribe publishes a report to the agora every round. Use it "
+            "when a matter deserves more than your single voice: a threat to "
+            "dissect, a hard decision to weigh. You set the question and step "
+            "back; the committee deliberates on its own and reports to the "
+            "square. Convene sparingly. It costs real thinking.">>,
+          #{<<"question">> => str(<<"the question or matter for the committee to deliberate">>),
+            <<"drones">>   => int(<<"how many drone voices, 2 to 5 (default 3)">>)},
+          [<<"question">>])
     ].
 
 tool(Name, Desc, Props, Required) ->
@@ -81,6 +93,7 @@ tool(Name, Desc, Props, Required) ->
                                     required => Required}}}.
 
 str(Desc)   -> #{type => <<"string">>, description => Desc}.
+int(Desc)   -> #{type => <<"integer">>, description => Desc}.
 enum(Values) -> #{type => <<"string">>, enum => Values}.
 
 %% ===================================================================
@@ -115,6 +128,8 @@ execute(#{name := <<"set_working_memory">>, args := A}, #{did := Did}) ->
                 revise_working_memory_v1:new(Params), <<"working memory revised">>);
 execute(#{name := <<"set_scratchpad">>, args := A}, _Ctx) ->
     {ok, #{scratchpad => gv(<<"content">>, A, <<>>), ack => <<"scratchpad updated">>}};
+execute(#{name := <<"convene_committee">>, args := A}, #{did := Did}) ->
+    convene(gv(<<"question">>, A, <<>>), gv(<<"drones">>, A, 3), Did);
 execute(#{name := Name}, _Ctx) ->
     {error, {unknown_tool, Name}}.
 
@@ -128,6 +143,29 @@ speak(Body, Did) ->
     case maybe_publish_to_agora:dispatch(Cmd) of
         {ok, _V, _E}   -> {ok, #{ack => <<"spoke in the agora">>}};
         {error, _} = E -> E
+    end.
+
+%% --- convening a committee hands off to the convene_committee slice ---
+convene(<<>>, _Drones, _Did) ->
+    {error, empty_question};
+convene(Question, Drones, Did) ->
+    Spec = #{convener => Did, question => Question, drones => as_int(Drones)},
+    convene_result(convene_committee:convene(Spec)).
+
+convene_result({ok, _Pid})    -> {ok, #{ack => <<"committee convened">>}};
+convene_result({error, _} = E) -> E.
+
+%% A JSON number may arrive as an integer, a float, or (from a chatty model) a
+%% string. Coerce to an integer; the slice clamps the range.
+as_int(N) when is_integer(N) -> N;
+as_int(N) when is_float(N)   -> round(N);
+as_int(N) when is_binary(N)  -> binary_int(N);
+as_int(_Other)               -> 3.
+
+binary_int(N) ->
+    case string:to_integer(N) of
+        {I, _} when is_integer(I) -> I;
+        _NotAnInt                 -> 3
     end.
 
 %% --- self-authorship folds back into the Soul ---

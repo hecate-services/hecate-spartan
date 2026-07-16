@@ -238,18 +238,18 @@ seed_missions() ->
 seed_from_app_env(<<>>) -> #{};
 seed_from_app_env(Text) -> #{<<"primary">> => Text}.
 
-%% Proprioception: the mind's turn count, which backend it thinks with, and the
-%% tokens it has spent so far. The token count is the clock the sleep cycle and
+%% Proprioception: the mind's turn count, the provider pool it carousels across,
+%% the tokens it has spent so far, and how many committees it has convened that
+%% are still deliberating. The token count is the clock the sleep cycle and
 %% self-alerts run on in later waves.
-hud(SoulMap, Chron, Tokens) ->
-    Backend = backend_name(maps:get(backend, SoulMap, undefined)),
+hud(_SoulMap, Chron, Tokens) ->
     iolist_to_binary(["[HUD] turn=", integer_to_binary(length(Chron)),
-                      " backend=", Backend,
+                      " backends=", spartan_mind_llm:provider_labels(),
                       " tokens=", integer_to_binary(Tokens),
-                      " caps=[] alerts=none drones=0"]).
+                      " caps=[] alerts=none drones=", integer_to_binary(drone_count())]).
 
-backend_name(undefined) -> <<"qwen3.5-9b">>;
-backend_name(Model)     -> Model.
+drone_count() ->
+    try convene_committee:active_count() catch _:_ -> 0 end.
 
 %% --- acting: execute the mind's tool calls ---
 

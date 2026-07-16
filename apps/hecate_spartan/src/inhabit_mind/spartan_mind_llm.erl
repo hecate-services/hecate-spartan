@@ -1,23 +1,32 @@
-%%% @doc Where a mind reaches off the BEAM to think. A mind's engine is data
-%%% (HECATE_MIND_BACKEND), not baked in: the same Soul can think with any of
-%%% several providers. Splitting a society across backends halves the concurrent
-%%% load on each AND gives real cognitive diversity (different engines, different
-%%% families of voice), the deepest antidote to sycophantic convergence.
+%%% @doc Where a mind reaches off the BEAM to think. A mind's engines are data
+%%% (HECATE_MIND_PROVIDERS), not baked in: the same Soul can think with any of
+%%% several providers, and can carousel across a POOL of them turn to turn.
+%%% Spreading a society across backends AND letting each mind rotate providers
+%%% gives two wins at once: concurrent load is shared, and there is real
+%%% cognitive diversity (different engines, different families of voice), the
+%%% deepest antidote to sycophantic convergence.
 %%%
-%%% Backends:
-%%%   - melious : sovereign-EU broker, OpenAI-compatible. MELIOUS_API_KEY.
-%%%   - groq    : fast, OpenAI-compatible, gpt-oss model. GROQ_API_KEYS.
-%%%   - gemini  : Google generateContent (different shape). GEMINI_API_KEYS.
+%%% Providers (each a clause in provider_config/1):
+%%%   - melious  : sovereign-EU broker, OpenAI-compatible. MELIOUS_API_KEY.
+%%%   - mistral  : sovereign-EU, OpenAI-compatible. MISTRAL_API_KEYS.
+%%%   - cerebras : fast, OpenAI-compatible, GLM model. CEREBRAS_API_KEYS.
+%%%   - groq     : fast, OpenAI-compatible, gpt-oss model. GROQ_API_KEYS.
+%%%   - gemini   : Google generateContent (different shape). GEMINI_API_KEYS.
 %%%
-%%% Every backend takes a POOL of keys (comma-separated; a lone key is a pool of
-%%% one) and rotates through them per call and on failure, with exponential
-%%% backoff + jitter, so per key rate limits and provider bad-windows self-heal
-%%% and a society does not retry in lockstep. Adding another OpenAI-compatible
-%%% provider is a line in backend_config/0.
+%%% A mind's HECATE_MIND_PROVIDERS is an ordered CSV of provider names. Each
+%%% provider takes a POOL of keys (comma-separated; a lone key is a pool of one).
+%%% A call builds a PROVIDER-FIRST round-robin schedule across every configured
+%%% provider that has keys, one key per slot, capped at ?ATTEMPTS, with
+%%% exponential backoff + jitter between slots. Provider-first means a failure
+%%% falls straight to a DIFFERENT provider on the next try: when one broker has a
+%%% bad window, another answers, and per-key rate limits self-heal without the
+%%% society retrying in lockstep. Adding a provider is a clause in
+%%% provider_config/1 plus a name in a mind's HECATE_MIND_PROVIDERS.
 -module(spartan_mind_llm).
 
 -export([reason/2, reason_messages/1, reason_messages/2]).
 -export([reason_tools/2, reason_tools/3, interpret_message/1, gemini_interpret/1]).
+-export([provider_labels/0]).
 
 -define(MELIOUS_URL, "https://api.melious.ai/v1/chat/completions").
 -define(MELIOUS_MODEL, <<"qwen3.5-9b">>).
@@ -66,10 +75,9 @@ reason_messages(Messages, _Model) ->
 -spec reason_tools([map()], [map()]) ->
     {ok, {binary(), [map()], non_neg_integer()}} | {error, term()}.
 reason_tools(Messages, Tools) ->
-    C = backend_config(),
-    case keys(C) of
-        []   -> {error, no_api_key};
-        Keys -> send(C, body(C, Messages, Tools), keyseq(Keys, ?ATTEMPTS), 1)
+    case attempts() of
+        []       -> {error, no_backend};
+        Schedule -> send(Messages, Tools, Schedule, 1)
     end.
 
 -spec reason_tools([map()], [map()], binary()) ->
@@ -77,37 +85,90 @@ reason_tools(Messages, Tools) ->
 reason_tools(Messages, Tools, _Model) ->
     reason_tools(Messages, Tools).
 
-backend_config() ->
-    case os:getenv("HECATE_MIND_BACKEND") of
-        "gemini" -> #{fmt => gemini, url => ?GEMINI_URL, keyenv => "GEMINI_API_KEYS"};
-        "groq"   -> #{fmt => openai, url => ?GROQ_URL, model => ?GROQ_MODEL,
-                      keyenv => "GROQ_API_KEYS", label => "groq"};
-        "cerebras" -> #{fmt => openai, url => ?CEREBRAS_URL, model => ?CEREBRAS_MODEL,
-                      keyenv => "CEREBRAS_API_KEYS", label => "cerebras"};
-        "mistral" -> #{fmt => openai, url => ?MISTRAL_URL, model => ?MISTRAL_MODEL,
-                      keyenv => "MISTRAL_API_KEYS", label => "mistral"};
-        _Melious -> #{fmt => openai, url => ?MELIOUS_URL, model => ?MELIOUS_MODEL,
-                      keyenv => "MELIOUS_API_KEY", label => "melious"}
+%% @doc The provider pool a mind thinks with, as a human CSV, for the HUD.
+-spec provider_labels() -> binary().
+provider_labels() ->
+    iolist_to_binary(lists:join(<<",">>, [unicode:characters_to_binary(P) || P <- providers()])).
+
+%% The ordered provider pool this mind carousels. HECATE_MIND_PROVIDERS is the
+%% primary source (CSV); a bare HECATE_MIND_BACKEND is honoured as a pool of one
+%% so a single-provider node still works; the last resort is melious.
+providers() ->
+    case os:getenv("HECATE_MIND_PROVIDERS") of
+        S when is_list(S), S =/= "" -> split_csv(S);
+        _Unset                      -> default_providers()
     end.
 
+default_providers() ->
+    case os:getenv("HECATE_MIND_BACKEND") of
+        B when is_list(B), B =/= "" -> [B];
+        _Unset                      -> ["melious"]
+    end.
+
+split_csv(S) ->
+    [T || Part <- string:tokens(S, ","), (T = string:trim(Part)) =/= ""].
+
+provider_config("gemini")   -> #{fmt => gemini, url => ?GEMINI_URL,
+                                 keyenv => "GEMINI_API_KEYS", label => "gemini"};
+provider_config("groq")     -> #{fmt => openai, url => ?GROQ_URL, model => ?GROQ_MODEL,
+                                 keyenv => "GROQ_API_KEYS", label => "groq"};
+provider_config("cerebras") -> #{fmt => openai, url => ?CEREBRAS_URL, model => ?CEREBRAS_MODEL,
+                                 keyenv => "CEREBRAS_API_KEYS", label => "cerebras"};
+provider_config("mistral")  -> #{fmt => openai, url => ?MISTRAL_URL, model => ?MISTRAL_MODEL,
+                                 keyenv => "MISTRAL_API_KEYS", label => "mistral"};
+provider_config("melious")  -> #{fmt => openai, url => ?MELIOUS_URL, model => ?MELIOUS_MODEL,
+                                 keyenv => "MELIOUS_API_KEY", label => "melious"};
+provider_config(_Unknown)   -> undefined.
+
 %% ===================================================================
-%% The shared send loop: rotate the key pool, backoff+jitter on failure
+%% The attempt schedule: a provider-first round robin over every provider
+%% that has keys, one key per slot, cycling keys within a provider.
 %% ===================================================================
 
-send(_C, _Body, [], _Attempt) ->
-    {error, all_attempts_failed};
-send(C, Body, [Key | Rest], Attempt) ->
-    case once(C, Body, Key) of
+%% Shuffle the provider order per call so successive turns draw a DIFFERENT
+%% provider first: the carousel spreads load across every backend and milks each
+%% free tier, rather than pinning the primary and only failing over. Keys within
+%% a provider are shuffled too, so nothing is hit in lockstep.
+attempts() ->
+    schedule(shuffle(lists:filtermap(fun pool/1, providers())), ?ATTEMPTS).
+
+pool(Name) ->
+    case provider_config(Name) of
+        undefined -> false;
+        Config    -> pool_keys(Config, keys(Config))
+    end.
+
+pool_keys(_Config, [])  -> false;
+pool_keys(Config, Keys) -> {true, {Config, shuffle(Keys)}}.
+
+schedule([], _N) ->
+    [];
+schedule(Pools, N) ->
+    NP = length(Pools),
+    [slot(I, Pools, NP) || I <- lists:seq(0, N - 1)].
+
+slot(I, Pools, NP) ->
+    {Config, Keys} = lists:nth((I rem NP) + 1, Pools),
+    {Config, lists:nth((I div NP rem length(Keys)) + 1, Keys)}.
+
+%% ===================================================================
+%% The shared send loop: walk the schedule, backoff+jitter on failure
+%% ===================================================================
+
+send(_M, _T, [], _N) ->
+    {error, all_backends_exhausted};
+send(Messages, Tools, [{Config, Key} | Rest], N) ->
+    case once(Config, body(Config, Messages, Tools), Key) of
         {ok, _} = Ok ->
             Ok;
         {error, Why} when Rest =:= [] ->
             {error, Why};
         {error, Why} ->
-            Delay = (?BASE_BACKOFF_MS bsl min(Attempt - 1, 5)) + rand:uniform(?JITTER_MS),
-            logger:info("[spartan_mind_llm] ~s transient (~p); retry in ~bms",
-                        [maps:get(label, C, "gemini"), Why, Delay]),
+            Delay = (?BASE_BACKOFF_MS bsl min(N - 1, 5)) + rand:uniform(?JITTER_MS),
+            logger:info("[spartan_mind_llm] ~s transient (~p); rotating in ~bms",
+                        [maps:get(label, Config, "?"), Why, Delay]),
             timer:sleep(Delay),
-            send(C, Body, Rest, Attempt + 1)
+            send(Messages, Tools, Rest, N + 1)
     end.
 
 once(#{fmt := openai, url := Url}, Body, Key) ->
@@ -123,12 +184,6 @@ http_do(Request, ParseFun) ->
         {ok, {{_, Code, _}, _RH, Resp}} -> {error, {http, Code, snippet(Resp)}};
         {error, Reason}                 -> {error, Reason}
     end.
-
-%% A shuffled pool cycled to ?ATTEMPTS entries: many keys rotate to fresh ones,
-%% a lone key is retried in place (its provider's failover may route elsewhere).
-keyseq(Keys, N) ->
-    Shuffled = shuffle(Keys),
-    lists:sublist(lists:append(lists:duplicate((N div length(Shuffled)) + 1, Shuffled)), N).
 
 keys(#{keyenv := Env}) ->
     case os:getenv(Env) of
