@@ -2,21 +2,21 @@
 %%%
 %%% The federated mesh commons for Spartan autonomous agents: entity
 %%% registry, entity-to-entity routing, broadcast, content-addressed
-%%% attachments — all realm-scoped, all recorded as reckon-db events so
-%%% delivery leaves a local, ordered audit trail.
+%%% attachments — all realm-scoped, store-free. State lives in ETS
+%%% registries + the minds' file Souls; the mesh is the source of truth
+%%% (registries refill from re-registration + peer announcements).
 %%%
-%%% This is the walking skeleton. It boots, wires its store, registers a
-%%% liveness /health probe, and joins the mesh. The business capabilities
-%%% and their vertical slices land in Phase 1a — see
-%%% plans/PLAN_HECATE_SPARTAN.md for the desk-by-desk roadmap.
+%%% It boots, registers a liveness /health probe, and joins the mesh. No
+%%% reckon-db: exporting data_dir/0 without store_id/0 keeps
+%%% hecate_om:boot/1 from wiring an event store.
 -module(hecate_spartan_service).
 -behaviour(hecate_om_service).
 
 -export([info/0, start/1, stop/1, health/0, capabilities/0, identity_spec/0]).
 
-%% Store-backed: hecate_om:boot/1 auto-starts the reckon-db store and its
-%% evoq subscription before start/1 fires.
--export([store_id/0, data_dir/0, store_indexes/0]).
+%% data_dir/0 only (no store_id/0): the minds' Souls and keypairs need a
+%% root on disk, but there is no event store to wire.
+-export([data_dir/0]).
 -export([locale/0]).
 
 info() ->
@@ -56,11 +56,7 @@ identity_spec() ->
         ttl_days  => 30
     }.
 
-%% ---- store callbacks ----
-
-store_id() ->
-    {ok, Id} = application:get_env(hecate_spartan, event_store_id),
-    Id.
+%% ---- data_dir callback (no store) ----
 
 data_dir() ->
     {ok, Dir} = application:get_env(hecate_spartan, data_dir),
@@ -75,13 +71,3 @@ locale() ->
         {ok, L} when is_binary(L), L =/= <<>>              -> L;
         _                                                  -> undefined
     end.
-
-%% Secondary indexes for entity-scoped queries: which entity a fact concerns,
-%% and a composite (realm, entity) hash for direct-inbox lookups. Payload
-%% indexes are how reckon-db CCC queries find messages without a full scan.
-store_indexes() ->
-    [
-        event_type,
-        {payload, <<"entity">>},
-        {payload_hash, [<<"realm">>, <<"entity">>]}
-    ].

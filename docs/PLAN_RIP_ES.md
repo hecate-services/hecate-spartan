@@ -1,7 +1,14 @@
 # PLAN: rip event-sourcing out of hecate-spartan (4a)
 
-**Status: stage 1 DONE, stage 2 SPECIFIED (not started)**
+**Status: stage 1 DONE, stage 2 DONE (2026-07-17)**
 **Date: 2026-07-17**
+
+Stage 2 shipped as five atomic, always-green commits (agora, route, broadcast,
+activity, register) + store teardown. All five fact shapes preserved byte-for-
+byte; realm contract intact; 113 eunit green, elvis clean, dialyzer unchanged
+(25 pre-existing warnings, evoq opaque/behaviour friction). reckon-db no longer
+boots (service exports data_dir/0 but not store_id/0). Dormant `_v1`
+command/event modules kept; their `replay/0` returns [] with no store.
 
 Goal: a store-free, mesh-native mind. Soul (files) + Memory (files/faculty) +
 Mesh (direct publishes) + registries (ETS). No reckon-db, no evoq, no ES.
