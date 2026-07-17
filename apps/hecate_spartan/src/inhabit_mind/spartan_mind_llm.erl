@@ -12,6 +12,9 @@
 %%%   - cerebras : fast, OpenAI-compatible, GLM model. CEREBRAS_API_KEYS.
 %%%   - groq     : fast, OpenAI-compatible, gpt-oss model. GROQ_API_KEYS.
 %%%   - gemini   : Google generateContent (different shape). GEMINI_API_KEYS.
+%%%   - colibri  : sovereign LOCAL inference (colibrì serve, GLM-5.2),
+%%%                OpenAI-compatible. Endpoint per box: COLIBRI_URL +
+%%%                COLIBRI_MODEL. Keyless — the local serve ignores the bearer.
 %%%
 %%% A mind's HECATE_MIND_PROVIDERS is an ordered CSV of provider names. Each
 %%% provider takes a POOL of keys (comma-separated; a lone key is a pool of one).
@@ -26,7 +29,7 @@
 
 -export([reason/2, reason_messages/1, reason_messages/2]).
 -export([reason_tools/2, reason_tools/3, interpret_message/1, gemini_interpret/1]).
--export([provider_labels/0]).
+-export([provider_labels/0, provider_config/1]).
 
 -define(MELIOUS_URL, "https://api.melious.ai/v1/chat/completions").
 -define(MELIOUS_MODEL, <<"qwen3.5-9b">>).
@@ -40,6 +43,12 @@
 -define(GEMINI_URL,
         "https://generativelanguage.googleapis.com/v1beta/models/"
         ?GEMINI_MODEL ":generateContent").
+%% colibrì — sovereign LOCAL inference (colibri serve, OpenAI-compatible). The
+%% endpoint is a deployment fact (WHICH box hosts the engine, and its converted
+%% model), so URL + model come from the environment, not a baked-in constant. The
+%% default points at a serve on the same host, for the single-box experiment.
+-define(COLIBRI_URL_DEFAULT, "http://127.0.0.1:8000/v1/chat/completions").
+-define(COLIBRI_MODEL_DEFAULT, <<"glm-5.2">>).
 
 -define(TIMEOUT_MS, 120000).
 -define(MAX_TOKENS, 500).
@@ -118,7 +127,23 @@ provider_config("mistral")  -> #{fmt => openai, url => ?MISTRAL_URL, model => ?M
                                  keyenv => "MISTRAL_API_KEYS", label => "mistral"};
 provider_config("melious")  -> #{fmt => openai, url => ?MELIOUS_URL, model => ?MELIOUS_MODEL,
                                  keyenv => "MELIOUS_API_KEY", label => "melious"};
+provider_config("colibri")  -> #{fmt => openai, url => colibri_url(), model => colibri_model(),
+                                 keyenv => "COLIBRI_API_KEY", label => "colibri", keyless => true};
 provider_config(_Unknown)   -> undefined.
+
+%% colibrì's endpoint + model are deployment facts (which box, which converted
+%% model), read from the environment with a localhost-serve default.
+colibri_url() ->
+    case os:getenv("COLIBRI_URL") of
+        U when is_list(U), U =/= "" -> U;
+        _Unset                      -> ?COLIBRI_URL_DEFAULT
+    end.
+
+colibri_model() ->
+    case os:getenv("COLIBRI_MODEL") of
+        M when is_list(M), M =/= "" -> unicode:characters_to_binary(M);
+        _Unset                      -> ?COLIBRI_MODEL_DEFAULT
+    end.
 
 %% ===================================================================
 %% The attempt schedule: a provider-first round robin over every provider
@@ -135,8 +160,20 @@ attempts() ->
 pool(Name) ->
     case provider_config(Name) of
         undefined -> false;
-        Config    -> pool_keys(Config, keys(Config))
+        Config    -> pool_keys(Config, provider_keys(Config))
     end.
+
+%% A keyless provider (local colibrì serve) carries no credential — the serve
+%% shim ignores the bearer. Give it a placeholder so the carousel keeps it in the
+%% pool instead of dropping it as unconfigured, while still honouring a real
+%% COLIBRI_API_KEY if one is set (e.g. a reverse proxy in front of it).
+provider_keys(#{keyless := true} = Config) ->
+    case keys(Config) of
+        []   -> ["local"];
+        Keys -> Keys
+    end;
+provider_keys(Config) ->
+    keys(Config).
 
 pool_keys(_Config, [])  -> false;
 pool_keys(Config, Keys) -> {true, {Config, shuffle(Keys)}}.

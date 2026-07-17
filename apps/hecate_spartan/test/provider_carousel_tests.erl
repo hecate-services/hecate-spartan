@@ -29,6 +29,30 @@ defaults_to_melious_test() ->
         end)
     end).
 
+%% colibrì is a first-class provider: OpenAI shape, endpoint from the env, and
+%% keyless (the local serve ignores the bearer) so it never needs a credential.
+colibri_is_env_driven_and_openai_test() ->
+    with_env("COLIBRI_URL", "http://colibri.lab:8000/v1/chat/completions", fun() ->
+        with_env("COLIBRI_MODEL", "glm-5.2", fun() ->
+            Cfg = spartan_mind_llm:provider_config("colibri"),
+            ?assertEqual(openai, maps:get(fmt, Cfg)),
+            ?assertEqual(true, maps:get(keyless, Cfg)),
+            ?assertEqual("http://colibri.lab:8000/v1/chat/completions", maps:get(url, Cfg)),
+            ?assertEqual(<<"glm-5.2">>, maps:get(model, Cfg))
+        end)
+    end).
+
+colibri_url_defaults_to_local_serve_test() ->
+    with_unset("COLIBRI_URL", fun() ->
+        ?assertEqual("http://127.0.0.1:8000/v1/chat/completions",
+                     maps:get(url, spartan_mind_llm:provider_config("colibri")))
+    end).
+
+colibri_rides_the_carousel_test() ->
+    with_env("HECATE_MIND_PROVIDERS", "colibri,melious", fun() ->
+        ?assertEqual(<<"colibri,melious">>, spartan_mind_llm:provider_labels())
+    end).
+
 %% --- env fixtures (restore whatever was there) ---
 
 with_env(Var, Value, Fun) ->
