@@ -3,7 +3,7 @@
 %%% The federated mesh commons for Spartan autonomous agents: entity
 %%% registry, entity-to-entity routing, broadcast, content-addressed
 %%% attachments — all realm-scoped, all recorded as reckon-db events so
-%%% delivery carries provenance (and right-to-erasure) for free.
+%%% delivery leaves a local, ordered audit trail.
 %%%
 %%% This is the walking skeleton. It boots, wires its store, registers a
 %%% liveness /health probe, and joins the mesh. The business capabilities

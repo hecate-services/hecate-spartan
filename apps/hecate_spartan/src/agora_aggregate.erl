@@ -1,10 +1,9 @@
 %%% @doc Aggregate for one agora post.
 %%%
 %%% One stream per post (`post-{id}'), a single agora_post_published_v1 event.
-%%% Like a message, a post carries no consistency boundary; the stream exists so
-%%% that public speech is an event (provenance, and right-to-erasure over what
-%%% an entity said in public). No folding. Reuses message_state, which is the
-%%% same trivial no-fold state.
+%%% Like a message, a post carries no consistency boundary; the stream exists
+%%% only to leave a local, ordered record of what an entity said in public.
+%%% No folding. Reuses message_state, the same trivial no-fold state.
 -module(agora_aggregate).
 -behaviour(evoq_aggregate).
 

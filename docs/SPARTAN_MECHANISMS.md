@@ -272,8 +272,9 @@ The persisted mind: `conversation_history` (a deque, the L3 log), `working_memor
 `event_id_counter`, `action_id_counter`, `cmo_timer_info`, plus live handles
 (`_provider`, `_ltm_instance`, `mindfulness_draft`). Saved to disk with backups.
 
-**For the port:** this is the aggregate. Event-source it and the crash-recovery,
-provenance, and right-to-erasure come for free.
+**For the port:** the port persists this as the Soul aggregate. Whether
+event-sourcing is the right choice for it (versus editable text or SQLite) is
+examined critically in [`DESIGN_SOUL_PERSISTENCE.md`](DESIGN_SOUL_PERSISTENCE.md).
 
 ---
 

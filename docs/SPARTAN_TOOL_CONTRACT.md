@@ -80,8 +80,8 @@ index projects the latter.
    "memory_id":{"type":"string"}},
   "required":["memory_id"]}}}
 ```
-Action. Emits `memory_forgotten_v1` (reckon-db erasure); the index tombstones and
-rebuilds it out.
+Action. Emits `memory_forgotten_v1`; the index tombstones the entry and rebuilds
+without it.
 
 ---
 

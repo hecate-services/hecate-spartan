@@ -71,8 +71,7 @@ The replacement has three clean parts:
   vector. The vector index is a projection: rebuildable from the event log
   without ever re-calling the embedding API, and persisted as a projection cache
   so a restart is fast. A-Mem links are events too (`memories_linked_v1`), so the
-  Zettelkasten graph is durable and inherits provenance and right-to-erasure like
-  everything else.
+  Zettelkasten graph is durable and inherits provenance like everything else.
 
 Net: LanceDB goes away entirely. We gain a single source of truth (the event
 log), sovereign embeddings, a vector index that runs on the cheap hardware, and a

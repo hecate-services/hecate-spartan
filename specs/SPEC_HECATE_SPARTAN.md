@@ -142,9 +142,9 @@ apps/hecate_spartan/src/
 QRY side: `query_entities` (discovery/registry), `query_deliveries`
 (provenance / audit).
 
-Every routed/broadcast message is a ReckonDB event → **provenance and
-right-to-erasure for free**. This is the property SpartanRadio's fire-and-
-delete files never had.
+Every routed/broadcast message is recorded as a ReckonDB event, so there is a
+local, ordered audit trail — the record SpartanRadio's fire-and-delete files
+never kept.
 
 ### 3.3 Mesh topic scheme (realm-scoped)
 

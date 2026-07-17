@@ -67,8 +67,8 @@ Realm-scoped capabilities, advertised slice-by-slice as each ships:
 | `spartan.discover` | DHT + registry projection | hardcoded contact paths |
 | `spartan.receive` | long-poll / stream drain | FileWatcher polling |
 
-Every routed and broadcast message is a reckon-db event → **provenance and
-right-to-erasure for free**, which fire-and-delete alert files never had.
+Every routed and broadcast message is recorded as a reckon-db event, so there is
+a local, ordered audit trail that fire-and-delete alert files never kept.
 
 ## Status
 
@@ -149,8 +149,9 @@ self-alerts, most of the nine archives, sovereign drones, and world reach. Those
 are his Phases 2 to 4, and they are the parts we most admire.
 
 **What is ours, so credit stays honest.** Gene's Soul is mutable files on disk;
-we re-homed his *concept* as an **event-sourced aggregate** (reckon-db streams,
-provenance and right-to-erasure for free), which is our engineering, not his. We
+we re-homed his *concept* as an **event-sourced aggregate** (reckon-db streams),
+which is our engineering, not his — and a choice we now hold up to hard scrutiny
+in [`docs/DESIGN_SOUL_PERSISTENCE.md`](docs/DESIGN_SOUL_PERSISTENCE.md). We
 replaced his local LanceDB and sentence-transformers with a sovereign,
 mesh-served embedding stack ([`hecate-embed`](https://codeberg.org/hecate-social/hecate-embed),
 [`hecate-vector`](https://codeberg.org/hecate-social/hecate-vector),

@@ -1,8 +1,8 @@
 %%% @doc Aggregate for a routed message.
 %%%
 %%% One stream per message (`msg-{id}'), a single message_routed_v1 event.
-%%% Messages carry no consistency boundary — the stream exists purely so the
-%%% routing is an event (provenance, right-to-erasure). No folding.
+%%% Messages carry no consistency boundary — the stream exists only to leave a
+%%% local, ordered record of the routing. No folding.
 -module(message_aggregate).
 -behaviour(evoq_aggregate).
 
