@@ -18,12 +18,18 @@ soul_test_() ->
       fun reopen_preserves_identity_and_faculties/1,
       fun area_self_heals_from_disk/1]}.
 
+%% Fresh on-disk root per test. `unique_integer' restarts each VM, so these paths
+%% recur across `rebar3 eunit' invocations; wipe in AND out so a prior run's Soul
+%% files can never bleed into this one (a stale charter/area fails the asserts).
 setup() ->
-    iolist_to_binary(filename:join(
+    Dir = iolist_to_binary(filename:join(
         ["/tmp", "spartan_soul_test",
-         integer_to_list(erlang:unique_integer([positive]))])).
+         integer_to_list(erlang:unique_integer([positive]))])),
+    _ = os:cmd("rm -rf " ++ binary_to_list(Dir)),
+    Dir.
 
-cleanup(_Dir) ->
+cleanup(Dir) ->
+    _ = os:cmd("rm -rf " ++ binary_to_list(Dir)),
     ok.
 
 %% Open a fresh mind (unique DID → unique area names, no cross-test collision).
