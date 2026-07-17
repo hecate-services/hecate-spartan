@@ -18,7 +18,7 @@ row_from_replayed_event_test() ->
                  entity_name => <<"Zeta">>,
                  pubkey => <<0:256>>,
                  registered_at => 1720000000000},
-    {Did, Entry} = entity_registered_v1_to_entities:row(Replayed),
+    {Did, Entry} = maybe_register_entity:row(Replayed),
     ?assertEqual(<<"did:key:zeta">>, Did),
     ?assertEqual(<<"Zeta">>, maps:get(entity_name, Entry)),
     ?assertEqual(1, maps:get(status, Entry)),
@@ -30,7 +30,7 @@ row_accepts_binary_keys_test() ->
                  <<"entity_name">> => <<"Eta">>,
                  <<"pubkey">> => <<0:256>>,
                  <<"registered_at">> => 42},
-    {Did, Entry} = entity_registered_v1_to_entities:row(Replayed),
+    {Did, Entry} = maybe_register_entity:row(Replayed),
     ?assertEqual(<<"did:key:eta">>, Did),
     ?assertEqual(<<"Eta">>, maps:get(entity_name, Entry)).
 

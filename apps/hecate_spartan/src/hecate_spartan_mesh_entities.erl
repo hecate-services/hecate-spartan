@@ -99,7 +99,7 @@ rebuild_local(Home) ->
     length(Events).
 
 upsert_local(Event, Home) ->
-    {Did, Entry} = entity_registered_v1_to_entities:row(Event),
+    {Did, Entry} = maybe_register_entity:row(Event),
     upsert(#{did => Did,
              entity_name => maps:get(entity_name, Entry),
              home => Home,

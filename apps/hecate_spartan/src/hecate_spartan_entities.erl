@@ -12,7 +12,7 @@
 -module(hecate_spartan_entities).
 -behaviour(gen_server).
 
--export([start_link/0, get/1, all/0, count/0]).
+-export([start_link/0, upsert/2, get/1, all/0, count/0]).
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2, terminate/2]).
 
 -define(TABLE, entities).
@@ -20,6 +20,12 @@
 -spec start_link() -> {ok, pid()} | {error, term()}.
 start_link() ->
     gen_server:start_link({local, ?MODULE}, ?MODULE, [], []).
+
+%% @doc Upsert a directory row (the register_entity handler writes through here).
+-spec upsert(binary(), map()) -> ok.
+upsert(Did, Entry) when is_binary(Did) ->
+    true = ets:insert(?TABLE, {Did, Entry}),
+    ok.
 
 %% @doc Look up one entity by its DID.
 -spec get(binary()) -> {ok, map()} | {error, not_found}.
@@ -60,6 +66,6 @@ rebuild() ->
     length(Events).
 
 insert_row(Event) ->
-    {Did, Entry} = entity_registered_v1_to_entities:row(Event),
+    {Did, Entry} = maybe_register_entity:row(Event),
     true = ets:insert(?TABLE, {Did, Entry}),
     ok.

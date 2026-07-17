@@ -111,7 +111,7 @@ announce(Home, Entry) ->
     case {hecate_om:macula_client(), hecate_om_identity:realm()} of
         {{ok, Pool}, {ok, Realm}} ->
             catch macula:publish(Pool, Realm, ?TOPIC,
-                                 on_entity_registered_announce:fact(Data, Home)),
+                                 maybe_register_entity:fact(Data, Home)),
             ok;
         _ ->
             ok

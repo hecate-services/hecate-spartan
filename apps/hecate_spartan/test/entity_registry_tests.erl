@@ -1,11 +1,12 @@
-%%% @doc Tests for the entity registry read model + its projection.
+%%% @doc Tests for the entity registry read model (store-free: the handler writes
+%%% the row through hecate_spartan_entities:upsert/2).
 -module(entity_registry_tests).
 -include_lib("eunit/include/eunit.hrl").
 
 registry_test_() ->
     {setup, fun setup/0, fun cleanup/1,
      fun(_) ->
-         [ projection_upserts_entity()
+         [ handler_upserts_entity()
          , registry_lookup_and_count()
          , unknown_entity_is_not_found()
          ]
@@ -13,21 +14,20 @@ registry_test_() ->
 
 setup() ->
     {ok, Pid} = hecate_spartan_entities:start_link(),
-    {ok, _State, RM} = entity_registered_v1_to_entities:init(#{}),
-    %% Project one registration into the table.
-    Event = #{event_type => <<"entity_registered_v1">>,
-              data => #{did => <<"did:key:alpha">>,
-                        entity_name => <<"Alpha">>,
-                        pubkey => <<0:256>>,
-                        registered_at => 1720000000000}},
-    {ok, _S2, _RM2} = entity_registered_v1_to_entities:project(Event, #{}, #{}, RM),
+    %% One registration lands in the table exactly as dispatch does it.
+    {Did, Entry} = maybe_register_entity:row(
+                     #{did => <<"did:key:alpha">>,
+                       entity_name => <<"Alpha">>,
+                       pubkey => <<0:256>>,
+                       registered_at => 1720000000000}),
+    ok = hecate_spartan_entities:upsert(Did, Entry),
     #{pid => Pid}.
 
 cleanup(#{pid := Pid}) ->
     gen_server:stop(Pid),
     ok.
 
-projection_upserts_entity() ->
+handler_upserts_entity() ->
     {ok, Entry} = hecate_spartan_entities:get(<<"did:key:alpha">>),
     [ ?_assertEqual(<<"Alpha">>, maps:get(entity_name, Entry))
     , ?_assertEqual(<<"did:key:alpha">>, maps:get(did, Entry))

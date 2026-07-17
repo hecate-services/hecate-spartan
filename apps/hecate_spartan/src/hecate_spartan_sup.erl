@@ -21,20 +21,14 @@ init([]) ->
         %% first.
         worker(hecate_spartan_identity),
 
-        %% Entity registry read model. Owns the `entities' ETS table; must
-        %% start before the projection that writes into it.
+        %% Entity registry read model. Owns the `entities' ETS table; the
+        %% register_entity handler writes through it (4a: store-free).
         worker(hecate_spartan_entities),
 
-        %% Projection: entity_registered_v1 -> entities registry.
-        projection(entity_registered_v1_to_entities),
-
-        %% Mesh-wide entity directory (local + announced peers). Must start
-        %% before the announce PM and the federation registry that write it.
+        %% Mesh-wide entity directory (local + announced peers). The register
+        %% handler seeds this instance's own rows; federation_registry writes
+        %% peers'.
         worker(hecate_spartan_mesh_entities),
-
-        %% PM: on entity_registered, announce to the federation (upsert local
-        %% mesh_entities row + publish entity_announced fact).
-        projection(on_entity_registered_announce),
 
         %% Federation registry: subscribe to spartan/registry, project peers'
         %% announcements into mesh_entities; re-announce local entities.
@@ -85,13 +79,6 @@ mind_sup(Module) ->
     #{id => Module,
       start => {Module, start_link, []},
       restart => permanent, shutdown => infinity, type => supervisor,
-      modules => [Module]}.
-
-projection(Module) ->
-    #{id => Module,
-      start => {evoq_projection, start_link,
-                [Module, #{}, #{store_id => hecate_spartan_store}]},
-      restart => permanent, shutdown => 5000, type => worker,
       modules => [Module]}.
 
 worker(Module) ->
