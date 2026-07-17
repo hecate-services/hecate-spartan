@@ -21,6 +21,13 @@ jobs:
     container:
       image: erlang:28
     env:
+      # Pin cargo/rustup homes to /root: the GHA container exports
+      # HOME=/github/home while the euid home is /root, so left to its defaults
+      # rustup installs under /github/home and later steps (which don't share
+      # that HOME) can't find the toolchain. Fixed paths keep install, symlinks,
+      # cache, and the rebar subprocess all pointing at one place.
+      CARGO_HOME: /root/.cargo
+      RUSTUP_HOME: /root/.rustup
       # crt-static off so the NIFs link as cdylibs (harmless on glibc, kept for
       # parity with the Alpine release build); force source over any fetched
       # precompiled artifact so we never load a glibc-mismatched binary.
@@ -32,12 +39,15 @@ jobs:
       - name: Rust + C toolchain (macula/reckon NIFs build from source)
         run: |
           set -eu
+          # Align HOME with the euid home so rustup-init's sudo/HOME sanity check
+          # passes; CARGO_HOME/RUSTUP_HOME (job env) fix where it actually lands.
+          export HOME=/root
           apt-get update
           apt-get install -y --no-install-recommends build-essential cmake perl curl
           curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs \
             | sh -s -- -y --default-toolchain stable --profile minimal
           # rebar3's cargo hooks run in a subprocess whose PATH excludes
-          # /root/.cargo/bin, so surface the rustup proxies on the default PATH
+          # $CARGO_HOME/bin, so surface the rustup proxies on the default PATH
           # (they dispatch on argv[0]). Same trick the Containerfile uses.
           ln -sf /root/.cargo/bin/rustup /usr/local/bin/cargo
           ln -sf /root/.cargo/bin/rustup /usr/local/bin/rustc
