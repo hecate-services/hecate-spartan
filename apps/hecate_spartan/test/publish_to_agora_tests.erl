@@ -35,11 +35,11 @@ fact_carries_the_body_test() ->
     Data = #{post_id => <<"p1">>, from => <<"did:key:a">>,
              body => <<"public words">>, in_reply_to => undefined,
              posted_at => 1720000000000},
-    F = on_agora_post_published_publish_fact:fact(Data),
+    F = maybe_publish_to_agora:fact(Data),
     ?assertEqual(agora_post, maps:get(type, F)),
     ?assertEqual(<<"public words">>, maps:get(body, F)),
     ?assertEqual(<<"did:key:a">>, maps:get(from, F)),
-    ?assertEqual(<<"spartan/agora">>, on_agora_post_published_publish_fact:topic()).
+    ?assertEqual(<<"spartan/agora">>, maybe_publish_to_agora:topic()).
 
 %% --- the feed read model ---
 

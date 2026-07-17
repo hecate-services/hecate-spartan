@@ -126,7 +126,7 @@ publish_each(Pool, Realm, Posts) ->
     lists:foreach(
       fun(P) ->
           catch macula:publish(Pool, Realm, ?TOPIC,
-                               on_agora_post_published_publish_fact:fact(P))
+                               maybe_publish_to_agora:fact(P))
       end, Posts),
     ok.
 

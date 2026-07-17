@@ -1,20 +1,21 @@
 %%% @doc Handler for the publish_to_agora command.
 %%%
-%%% Pure domain logic: validate and emit. Authorisation (the entity's UCAN must
-%%% carry `agora/post') is an ingress concern, enforced before dispatch.
+%%% Store-free (4a): dispatch performs the effects DIRECTLY — land the post in the
+%%% local feed, deliver it into every locally-homed mind's inbox except the
+%%% author's, and publish the public FACT to the mesh. No aggregate, no event
+%%% store, no projection. Callers keep building a `publish_to_agora_v1' command
+%%% and calling `dispatch/1'; the return shape `{ok, _Seq, _Events}' is preserved.
+%%%
+%%% `handle/1' remains as the pure validate-and-emit step (used in tests and to
+%%% keep the `_v1' command/event pair honest). `fact/1' + `topic/0' are the public
+%%% contract of a post — the ONE fact in hecate-spartan that carries a body into
+%%% the open, and it may, because the entity chose to speak in public.
+%%%
+%%% Authorisation (the entity's UCAN must carry `agora/post') is an ingress
+%%% concern, enforced before dispatch.
 -module(maybe_publish_to_agora).
 
--export([handle/1, handle_from_map/1, dispatch/1]).
-
--dialyzer({nowarn_function, [dispatch/1]}).
-
--spec handle_from_map(map()) -> {ok, [map()]} | {error, term()}.
-handle_from_map(#{post_id := P, from := F, body := B} = Payload) ->
-    At = maps:get(posted_at, Payload, erlang:system_time(millisecond)),
-    R = maps:get(in_reply_to, Payload, undefined),
-    handle(publish_to_agora_v1:new(P, F, B, R, At));
-handle_from_map(_) ->
-    {error, missing_fields}.
+-export([handle/1, dispatch/1, fact/1, topic/0]).
 
 -spec handle(publish_to_agora_v1:publish_to_agora_v1()) ->
     {ok, [map()]} | {error, term()}.
@@ -28,21 +29,41 @@ handle(Command) ->
             {error, Reason}
     end.
 
+%% @doc Speak in public, store-free. Lands locally, delivers to the minds, and
+%% publishes the fact. Returns the legacy `{ok, Seq, Events}' shape so callers
+%% (the ingress, mind_tools, committees, federation_ask) are untouched.
 -spec dispatch(publish_to_agora_v1:publish_to_agora_v1()) ->
     {ok, non_neg_integer(), [map()]} | {error, term()}.
 dispatch(Cmd) ->
-    #{post_id := PostId} = CmdMap = publish_to_agora_v1:to_map(Cmd),
-    EvoqCmd = evoq_command:new(
-        publish_to_agora,
-        agora_aggregate,
-        agora_aggregate:stream_id(PostId),
-        CmdMap,
-        #{timestamp => erlang:system_time(millisecond)}
-    ),
-    Opts = #{store_id => hecate_spartan_store,
-             adapter => reckon_evoq_adapter,
-             consistency => eventual},
-    evoq_command_router:dispatch(EvoqCmd, Opts).
+    #{from := F, body := B} = Map = publish_to_agora_v1:to_map(Cmd),
+    case validate(F, B) of
+        ok ->
+            Data = post_data(Map),
+            ok = land_local(Data),
+            _ = publish_fact(Data),
+            {ok, 0, [Data]};
+        {error, _} = E ->
+            E
+    end.
+
+%% @doc The public contract of a post. A plain map (CBOR on the wire).
+%% `home' travels so a spectator can say WHERE a mind spoke from, which is the
+%% whole point of a society spread across eight countries.
+-spec fact(map()) -> map().
+fact(Data) ->
+    #{type        => agora_post,
+      post_id     => gf(post_id, Data),
+      from        => gf(from, Data),
+      body        => gf(body, Data),
+      in_reply_to => gf(in_reply_to, Data),
+      posted_at   => gf(posted_at, Data),
+      home        => safe_service_did(),
+      locale      => hecate_spartan_service:locale()}.
+
+-spec topic() -> binary().
+topic() -> <<"spartan/agora">>.
+
+%% --- Internal ---
 
 validate(From, Body) ->
     case {byte_size(From), byte_size(Body)} of
@@ -50,3 +71,40 @@ validate(From, Body) ->
         {_, 0} -> {error, empty_body};
         _      -> ok
     end.
+
+post_data(Map) ->
+    maps:with([post_id, from, body, in_reply_to, posted_at], Map).
+
+%% Two audiences, exactly as the old projection: the feed a spectator reads and
+%% the inboxes the headless minds hear through.
+land_local(Data) ->
+    Post = hecate_spartan_agora:row(Data),
+    ok = hecate_spartan_agora:post(Post),
+    _ = deliver_to_local_minds(Post),
+    ok.
+
+deliver_to_local_minds(#{post_id := Id, from := From} = Post) ->
+    Msg = #{msg_id  => Id,
+            from    => From,
+            body    => maps:get(body, Post),
+            sent_at => maps:get(posted_at, Post),
+            agora   => true},
+    Listeners = [maps:get(did, E) || E <- hecate_spartan_entities:all(),
+                                     maps:get(did, E) =/= From],
+    _ = [hecate_spartan_inbox:deliver(Did, Msg) || Did <- Listeners],
+    ok.
+
+publish_fact(Data) ->
+    case {hecate_om:macula_client(), hecate_om_identity:realm()} of
+        {{ok, Pool}, {ok, Realm}} ->
+            catch macula:publish(Pool, Realm, topic(), fact(Data)),
+            ok;
+        _DarkOrNoRealm ->
+            ok
+    end.
+
+safe_service_did() ->
+    try hecate_spartan_identity:service_did() catch _:_ -> undefined end.
+
+gf(AtomKey, Data) ->
+    maps:get(AtomKey, Data, maps:get(atom_to_binary(AtomKey, utf8), Data, undefined)).

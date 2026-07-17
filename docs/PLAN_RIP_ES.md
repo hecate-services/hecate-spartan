@@ -133,7 +133,22 @@ restart; they refill from live re-registration (minds re-register on boot) + pee
 mesh announcements (~60s federation timers). Mesh is the source of truth. This is
 the correct mesh-native model, not a loss.
 
-### Execution order
+## Companion track — DISCUSS colibrì before building
+
+`~/work/github.com/rgfaber/colibri/` (pure-C GLM-5.2 MoE engine, OpenAI-compatible
+serve mode) is the sovereign-inference answer to the real blocker: minds are
+thought-starved by provider capacity (groq 429s, melious 400s, mistral 401s), not
+code. A `provider: colibri` drop-in would end the capacity starvation with no US
+provider in the path.
+
+**Do NOT start building colibrì integration.** It needs a hardware/deploy decision
+first (~25GB RAM + ~370GB disk per the engine's GLM-5.2 footprint) — which beam or
+edge box hosts it, how the carousel routes to it, latency budget. Bring this to the
+user as a discussion before any wiring. Ripping ES (this plan) and colibrì are
+independent: finish stage 2 regardless; colibrì is the capacity fix, not part of
+the store teardown.
+
+## Execution order
 1. agora (verify realm still shows posts).
 2. route_message, broadcast, activity (same pattern).
 3. register_entity (idempotency guard, two ETS, two relocations).
