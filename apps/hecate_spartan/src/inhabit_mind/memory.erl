@@ -11,7 +11,7 @@
 %%% faculty owns the consolidation hierarchy.
 -module(memory).
 
--export([open/2, observe/2, consolidated/1, tiers/0, store_name/2, sleep_name/1]).
+-export([open/2, observe/2, consolidated/1, recent_stm/2, tiers/0, store_name/2, sleep_name/1]).
 
 -spec tiers() -> [{atom(), binary()}].
 tiers() ->
@@ -62,6 +62,13 @@ observe(_Did, _Empty) ->
 consolidated(Did) ->
     #{cmos => texts(catch memory_store:recent(store_name(Did, cmo), 4)),
       msos => texts(catch memory_store:all(store_name(Did, mso)))}.
+
+%% @doc The most recent N raw experiences (STM), oldest first, as their texts.
+%% This is the mind's recent-history window, replacing the event-sourced
+%% chronicle: the same raw turns, now a faculty the Sleep Cycle also consolidates.
+-spec recent_stm(binary(), non_neg_integer()) -> [binary()].
+recent_stm(Did, N) ->
+    texts(catch memory_store:recent(store_name(Did, stm), N)).
 
 texts(Entries) when is_list(Entries) ->
     [maps:get(text, E, <<>>) || E <- Entries];

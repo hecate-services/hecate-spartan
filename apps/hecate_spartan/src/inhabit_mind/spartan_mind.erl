@@ -38,7 +38,7 @@
 -define(MISSION_TOPIC, <<"spartan/mission">>).
 -define(TOPICS, [<<"spartan/broadcast">>, <<"spartan/agora">>, ?MISSION_TOPIC]).
 -define(RESUB_MS, 5000).
--define(CHRONICLE_WINDOW, 8).
+-define(STM_SHOW, 8).
 
 %% A mind reasons at most once per cooldown, so a lively square cannot spiral
 %% into a token-burn loop. Tunable per node via app-env `mind_cooldown_ms'.
@@ -62,7 +62,6 @@
              genesis_version :: binary(),
              identity        :: map(),
              scratchpad = <<>> :: binary(),
-             chronicle  = []   :: [map()],
              missions   = #{}  :: #{binary() => binary()},
              tokens_used = 0   :: non_neg_integer(),
              last_reasoned = 0 :: integer(),
@@ -79,18 +78,16 @@ init(#{name := Name, character := Brief} = Spec) ->
     _ = register_self(Name, Did, Pub),
     {ok, Identity} = open_soul(Did, Name, Brief),
     _ = catch memory:open(Did, hecate_spartan_service:data_dir()),
-    Chronicle = load_chronicle(Did),
     self() ! subscribe,
     %% Open long-term memory off the init path: it starts the embedding model,
     %% which in production loads an ONNX model, and must not block the mind's
     %% boot. Until it is ready the mind simply recalls nothing.
     self() ! setup_memory,
     Locale = maps:get(locale, Spec, hecate_spartan_service:locale()),
-    logger:info("[spartan_mind] ~ts awake as ~ts (~b turns recalled)",
-                [Name, Did, length(Chronicle)]),
+    logger:info("[spartan_mind] ~ts awake as ~ts", [Name, Did]),
     {ok, #st{name = Name, did = Did, priv = Priv, pub = Pub,
              genesis_version = genesis_version(), identity = Identity,
-             chronicle = Chronicle, missions = seed_missions(), locale = Locale}}.
+             missions = seed_missions(), locale = Locale}}.
 
 handle_call(_Req, _From, St) -> {reply, {error, unknown_call}, St}.
 handle_cast(_Msg, St)        -> {noreply, St}.
@@ -204,17 +201,18 @@ cooldown_ms() ->
 
 %% --- the 4-layer context ---
 
-build_context(Message, #st{did = Did, identity = Id, chronicle = Chron, memory = Mem} = St) ->
+build_context(Message, #st{did = Did, identity = Id, memory = Mem} = St) ->
     SoulMap = soul:render(Did, Id),
+    Recent  = memory:recent_stm(Did, ?STM_SHOW),
     context_assembler:render(#{
         soul       => SoulMap,
         trigger    => Message,
-        chronicle  => Chron,
+        chronicle  => Recent,
         scratchpad => St#st.scratchpad,
         consolidated => memory:consolidated(Did),
         memories   => recall_memories(Mem, Message),
         mission    => render_missions(St#st.missions),
-        hud        => hud(Chron, St#st.tokens_used, mem_size(Mem))
+        hud        => hud(Recent, St#st.tokens_used, mem_size(Mem))
     }).
 
 %% Recall the memories nearest in meaning to this stimulus. Best-effort: an
@@ -301,19 +299,15 @@ apply_effect(Effect, #st{scratchpad = Scratch} = St) ->
     %% is a passing note, not a persisted faculty.
     St#st{scratchpad = maps:get(scratchpad, Effect, Scratch)}.
 
-%% --- the chronicle: an event-sourced window of lived turns ---
+%% --- recording a lived turn ---
 
-%% Every turn is recorded, silent ones included. It is persisted as a
-%% turn_taken_v1 event (fire and tolerate: a mind that cannot write its history
-%% still lives) and kept in the in-memory window for the next turn's context.
-%% Tokens accumulate on the running clock the HUD shows.
-remember_turn(Heard, Thought, ToolCalls, Tokens, #st{chronicle = Chron} = St) ->
-    Turn = #{heard => Heard, thought => Thought,
-             actions => [maps:get(name, C, <<"?">>) || C <- ToolCalls]},
-    _ = persist_turn(St#st.did, Turn, Tokens),
+%% Feed a substantive turn into the memory faculty's STM tier (the Sleep Cycle
+%% consolidates it upward), advance the token clock, and remember it for lexical
+%% recall. There is no separate chronicle now: STM is the recent-history window,
+%% a faculty rather than an event stream.
+remember_turn(Heard, Thought, _ToolCalls, Tokens, St) ->
     _ = observe_memory(St#st.did, Heard, Thought),
-    St#st{chronicle = tail(?CHRONICLE_WINDOW, Chron ++ [Turn]),
-          tokens_used = St#st.tokens_used + Tokens,
+    St#st{tokens_used = St#st.tokens_used + Tokens,
           memory = remember_turn_in_memory(St#st.memory, Heard, Thought)}.
 
 %% Feed a substantive turn into the memory faculty's STM tier; the Sleep Cycle
@@ -328,47 +322,15 @@ remember_turn_in_memory(undefined, _Heard, _Thought) -> undefined;
 remember_turn_in_memory(Mem, _Heard, <<>>)           -> Mem;
 remember_turn_in_memory(Mem, Heard, Thought)         -> mind_memory:remember(Mem, compose_memory(Heard, Thought)).
 
-persist_turn(Did, #{heard := H, thought := T, actions := A}, Tokens) ->
-    TurnId = binary:encode_hex(crypto:strong_rand_bytes(16), lowercase),
-    Params = #{turn_id => TurnId, did => Did, heard => H, thought => T,
-               actions => A, tokens => Tokens},
-    {ok, Cmd} = record_turn_v1:new(Params),
-    catch maybe_record_turn:dispatch(Cmd).
+%% --- long-term (lexical) memory: open, and seed from the mind's own STM ---
 
-%% At boot, rebuild the recent window from the log: all turns on this node,
-%% kept to this mind's own DID, oldest first, last window.
-load_chronicle(Did) ->
-    Mine = [turn_row(E) || E <- turn_taken_v1:replay(), mget(did, E) =:= Did],
-    Sorted = lists:sort(fun(A, B) -> at(A) =< at(B) end, Mine),
-    tail(?CHRONICLE_WINDOW, Sorted).
-
-turn_row(Event) ->
-    #{heard   => mget(heard, Event),
-      thought => mget(thought, Event),
-      actions => actions_of(Event),
-      at      => at(Event)}.
-
-actions_of(Event) ->
-    case mget(actions, Event) of
-        List when is_list(List) -> List;
-        _NotAList               -> []
-    end.
-
-at(Map) ->
-    case mget(at, Map) of
-        N when is_integer(N) -> N;
-        _NotAnInt            -> 0
-    end.
-
-%% --- long-term memory: open, and seed from the mind's own replayed history ---
-
-%% Open the mind's semantic memory and seed it from its past turns, so a reboot
-%% does not give the mind amnesia: what it lived through before is recallable
-%% again. Best-effort; a mind whose substrate is unavailable runs without it.
+%% Open the mind's lexical memory and seed it from the memory faculty's persisted
+%% STM, so a reboot does not give the mind amnesia: what it lived through before
+%% is recallable again. Best-effort; a mind without it just recalls nothing.
 setup_memory(#st{did = Did, name = Name} = St) ->
     case mind_memory:open(Did) of
         {ok, Mem0} ->
-            Mem = mind_memory:seed(Mem0, recent_turn_texts(Did)),
+            Mem = mind_memory:seed(Mem0, memory:recent_stm(Did, ?MEMORY_SEED_CAP)),
             logger:info("[spartan_mind] ~ts memory ready (~b recalled)",
                         [Name, mind_memory:size(Mem)]),
             St#st{memory = Mem};
@@ -376,14 +338,6 @@ setup_memory(#st{did = Did, name = Name} = St) ->
             logger:notice("[spartan_mind] ~ts has no long-term memory (~p)", [Name, Why]),
             St
     end.
-
-%% This mind's most recent substantive turns (a thought was formed), oldest
-%% first, capped, each rendered as one memory string.
-recent_turn_texts(Did) ->
-    Mine = [E || E <- turn_taken_v1:replay(),
-                 mget(did, E) =:= Did, is_binary(mget(thought, E)), mget(thought, E) =/= <<>>],
-    Sorted = lists:sort(fun(A, B) -> at(A) =< at(B) end, Mine),
-    [compose_memory(mget(heard, E), mget(thought, E)) || E <- tail(?MEMORY_SEED_CAP, Sorted)].
 
 %% One memory string per turn: the stimulus and the mind's own reading of it, so
 %% recall on a similar stimulus later surfaces how the mind thought last time.
@@ -433,10 +387,6 @@ genesis_version() ->
         {ok, V} when is_list(V)   -> unicode:characters_to_binary(V);
         _                         -> <<"1">>
     end.
-
-tail(N, List) ->
-    Len = length(List),
-    lists:nthtail(max(0, Len - N), List).
 
 mget(AtomKey, Map) ->
     maps:get(AtomKey, Map,

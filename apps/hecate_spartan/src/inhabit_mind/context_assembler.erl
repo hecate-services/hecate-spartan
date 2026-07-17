@@ -133,24 +133,12 @@ journal_block(<<>>) -> [];
 journal_block(Md)   -> ["\nYour cognitive journal:\n", Md, "\n"].
 
 %% ===================================================================
-%% L3 — the chronicle window
+%% L3 — the recent-history window (STM, from the memory faculty)
 %% ===================================================================
 
 l3([]) -> [];
-l3(Turns) ->
-    [sys(iolist_to_binary(["RECENT HISTORY\n", [turn_line(T) || T <- Turns]]))].
-
-turn_line(T) ->
-    ["- heard: ", mget(heard, T, <<>>), "\n",
-     "  thought: ", thought_or_none(mget(thought, T, <<>>)), "\n",
-     actions_line(mget(actions, T, []))].
-
-thought_or_none(<<>>)     -> <<"(nothing noted)">>;
-thought_or_none(undefined) -> <<"(nothing noted)">>;
-thought_or_none(Thought)  -> Thought.
-
-actions_line([]) -> ["  did: (nothing)\n"];
-actions_line(Names) -> ["  did: ", lists:join(<<", ">>, Names), "\n"].
+l3(Recent) ->
+    [sys(iolist_to_binary(["RECENT HISTORY\n", [["- ", T, "\n"] || T <- Recent]]))].
 
 %% ===================================================================
 %% L4 — the frontier
