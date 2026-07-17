@@ -52,15 +52,30 @@ render(#{soul := Soul} = Ctx) ->
     Chronicle  = maps:get(chronicle, Ctx, []),
     Scratchpad = maps:get(scratchpad, Ctx, <<>>),
     Memories   = maps:get(memories, Ctx, []),
+    Consolidated = maps:get(consolidated, Ctx, #{}),
     Hud        = maps:get(hud, Ctx, <<>>),
     Mission    = maps:get(mission, Ctx, <<>>),
     [sys(l1(Soul))]
         ++ mission_band(Mission)
         ++ [sys(l2(Soul))]
         ++ l3(Chronicle)
+        ++ consolidated_band(Consolidated)
         ++ [sys(l4(Soul, Scratchpad, Memories, Hud))]
         ++ mission_reminder(Mission)
         ++ [#{role => <<"user">>, content => Trigger}].
+
+%% The durable gist of a life: MSOs (meta-summaries) and CMOs (condensed
+%% experience), produced by the memory faculty's Sleep Cycle. Empty until the
+%% first consolidation.
+consolidated_band(#{cmos := Cmos, msos := Msos}) when Cmos =/= []; Msos =/= [] ->
+    [sys(iolist_to_binary(["WHAT YOU HAVE CONSOLIDATED\n",
+                           gist_block("Meta-summaries", Msos),
+                           gist_block("Condensed memories", Cmos)]))];
+consolidated_band(_None) ->
+    [].
+
+gist_block(_Title, [])    -> [];
+gist_block(Title, Items) -> ["\n", Title, ":\n", [["- ", I, "\n"] || I <- Items]].
 
 %% The society's work, distinct from a mind's identity. Deployment data (this
 %% deployment's use cases), rendered fresh each turn between the genesis core

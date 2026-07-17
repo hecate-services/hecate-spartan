@@ -78,6 +78,7 @@ init(#{name := Name, character := Brief} = Spec) ->
     {Did, Priv, Pub} = identity(Name),
     _ = register_self(Name, Did, Pub),
     {ok, Identity} = open_soul(Did, Name, Brief),
+    _ = catch memory:open(Did, hecate_spartan_service:data_dir()),
     Chronicle = load_chronicle(Did),
     self() ! subscribe,
     %% Open long-term memory off the init path: it starts the embedding model,
@@ -210,6 +211,7 @@ build_context(Message, #st{did = Did, identity = Id, chronicle = Chron, memory =
         trigger    => Message,
         chronicle  => Chron,
         scratchpad => St#st.scratchpad,
+        consolidated => memory:consolidated(Did),
         memories   => recall_memories(Mem, Message),
         mission    => render_missions(St#st.missions),
         hud        => hud(Chron, St#st.tokens_used, mem_size(Mem))
@@ -309,9 +311,16 @@ remember_turn(Heard, Thought, ToolCalls, Tokens, #st{chronicle = Chron} = St) ->
     Turn = #{heard => Heard, thought => Thought,
              actions => [maps:get(name, C, <<"?">>) || C <- ToolCalls]},
     _ = persist_turn(St#st.did, Turn, Tokens),
+    _ = observe_memory(St#st.did, Heard, Thought),
     St#st{chronicle = tail(?CHRONICLE_WINDOW, Chron ++ [Turn]),
           tokens_used = St#st.tokens_used + Tokens,
           memory = remember_turn_in_memory(St#st.memory, Heard, Thought)}.
+
+%% Feed a substantive turn into the memory faculty's STM tier; the Sleep Cycle
+%% consolidates it upward when the tier fills. Silent turns are not experiences.
+observe_memory(_Did, _Heard, <<>>) -> ok;
+observe_memory(Did, Heard, Thought) ->
+    catch memory:observe(Did, compose_memory(Heard, Thought)).
 
 %% Fold a lived turn into long-term memory. Only turns the mind actually reasoned
 %% about are worth recalling later; a silent PASS (no thought) is skipped.
