@@ -70,10 +70,6 @@ ENV HECATE_HEALTH_PORT=8470
 # The capital this node dials. Travels on the public facts, so a spectator can
 # say where a mind spoke from.
 ENV HECATE_NODE_LOCALE=unknown
-# The node-local hecate-embed service a mind's long-term memory embeds through.
-# Default is loopback; a node without the embed service running just has minds
-# whose recall returns nothing (memory degrades gracefully).
-ENV HECATE_EMBED_URL=http://127.0.0.1:8477
 
 # Realm service-principal cert mounts here; station socket under /run/macula.
 VOLUME ["/etc/hecate/secrets", "/var/lib/hecate-spartan"]

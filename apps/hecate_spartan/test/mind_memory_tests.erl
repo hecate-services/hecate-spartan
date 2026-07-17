@@ -14,12 +14,9 @@
                  <<"the cat slept in the afternoon sun">>]).
 
 memory_test_() ->
+    %% Lexical, in-process memory: no apps to start.
     {setup,
-     fun() ->
-         {ok, _} = application:ensure_all_started(hecate_embed),
-         {ok, _} = application:ensure_all_started(hecate_vector),
-         ok
-     end,
+     fun() -> ok end,
      fun(_) -> ok end,
      [
       fun stores_and_grows/0,

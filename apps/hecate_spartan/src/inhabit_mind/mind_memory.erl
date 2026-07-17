@@ -1,106 +1,64 @@
-%%% @doc A mind's long-term semantic memory.
+%%% @doc A mind's long-term memory, by lexical recall.
 %%%
-%%% The chronicle is a small recency window (the last few turns); this is the
-%%% rest, recalled by MEANING rather than recency. When a stimulus arrives the
-%%% mind asks "have I faced something like this before?", and the turns it lived
-%%% through that are semantically nearest surface into its context, however long
-%%% ago they happened.
+%%% No embeddings, no vector index, no external embedder. A mind remembers the
+%%% turns it lived through and, when a new stimulus arrives, recalls the ones
+%%% whose words most overlap it: "have I faced something like this before?"
 %%%
-%%% It owns only the memory POLICY. The two capabilities it composes live in
-%%% their own libraries: `hecate_embed' turns text into a vector (a real ONNX
-%%% embedder in production, a deterministic stub in dev), and `hecate_vector' is
-%%% the mind's own nearest-neighbour index. Embeddings are derived, model-
-%%% specific data, so they are never domain facts: this index is a read-model,
-%%% seeded at boot from the mind's replayed turn history and grown as it lives.
+%%% This is deliberately sovereign and in-process. It replaces the earlier
+%%% embed-and-vector-search LTM (hecate-embed / hecate-vector / the hecate-embedder
+%%% mesh service), which needed an ONNX runtime the beam Celerons cannot run
+%%% (AVX2). It pairs with the memory faculty's Sleep Cycle: the CONSOLIDATED gist
+%%% of a life is always in context (CMOs, MSOs), and this provides targeted recall
+%%% of specific past turns by word overlap. Less semantically precise than
+%%% embeddings; simpler, local, and dependency-free. See docs/DESIGN_MIND_FACULTIES.
 %%%
-%%% Every operation is best-effort. A mind whose embedder or index is momentarily
-%%% unavailable simply recalls nothing that turn; memory must never crash a turn.
+%%% Every operation is pure and best-effort; there is nothing to fail.
 -module(mind_memory).
 
 -export([open/1, remember/2, recall/3, seed/2, size/1]).
 
-%% multilingual-e5-small, and the stub, both produce 384-dim vectors.
--define(DIM, 384).
-
--type mem() :: #{did := binary(), index := term(), texts := #{binary() => binary()}}.
+%% An entry keeps the display text and its token set (computed once at insert).
+-type mem() :: #{did := binary(), entries := [{binary(), [binary()]}]}.
 -export_type([mem/0]).
 
-%% @doc Open a mind's memory: this mind's own vector index (named by its DID).
-%% Empty to start; the caller seeds it. Embedding is done by spartan_embed
-%% (mesh or http), so no model handle is held here.
--spec open(binary()) -> {ok, mem()} | {error, term()}.
+-spec open(binary()) -> {ok, mem()}.
 open(Did) when is_binary(Did) ->
-    with_index(Did, catch open_index(Did)).
+    {ok, #{did => Did, entries => []}}.
 
-with_index(Did, {ok, Index}) ->
-    {ok, #{did => Did, index => Index, texts => #{}}};
-with_index(_Did, _Index) ->
-    {error, memory_unavailable}.
-
-open_index(Did) ->
-    hecate_vector:open(index_name(Did), #{dim => ?DIM}).
-
-%% @doc Store one memory: embed it as a passage and add it to the index, keeping
-%% the display text alongside. Returns the (possibly unchanged) memory handle.
 -spec remember(mem(), binary()) -> mem().
-remember(#{index := Index, texts := Texts} = Mem, Text)
-  when is_binary(Text), Text =/= <<>> ->
-    add_embedding(Mem, Index, Texts, catch spartan_embed:passage(Text), Text);
+remember(#{entries := Es} = Mem, Text) when is_binary(Text), Text =/= <<>> ->
+    Mem#{entries => Es ++ [{Text, tokens(Text)}]};
 remember(Mem, _Text) ->
     Mem.
 
-add_embedding(Mem, Index, Texts, {ok, Vec}, Text) when length(Vec) =:= ?DIM ->
-    Id = new_id(),
-    _ = catch hecate_vector:add(Index, Id, Vec),
-    Mem#{texts => Texts#{Id => Text}};
-add_embedding(Mem, _Index, _Texts, {ok, Vec}, _Text) when is_list(Vec) ->
-    logger:warning("[mind_memory] dropping ~b-dim embedding; index expects ~b "
-                   "(embedder model mismatch?)", [length(Vec), ?DIM]),
-    Mem;
-add_embedding(Mem, _Index, _Texts, _Failed, _Text) ->
-    Mem.
-
-%% @doc Recall the K memories nearest in meaning to a query, as their texts.
-%% Never raises: any failure yields no memories.
+%% @doc The K remembered texts whose words most overlap the query, best first.
+%% Zero-overlap entries are never returned; an empty query recalls nothing.
 -spec recall(mem(), binary(), pos_integer()) -> [binary()].
-recall(#{index := Index, texts := Texts}, Query, K)
+recall(#{entries := Es}, Query, K)
   when is_binary(Query), Query =/= <<>>, is_integer(K), K > 0 ->
-    search_texts(catch spartan_embed:query(Query), Index, Texts, K);
+    QTokens = tokens(Query),
+    Scored  = [{score(QTokens, ETokens), Text} || {Text, ETokens} <- Es],
+    Hits    = lists:sort(fun({A, _}, {B, _}) -> A >= B end,
+                         [Pair || {S, _} = Pair <- Scored, S > 0]),
+    [Text || {_S, Text} <- lists:sublist(Hits, K)];
 recall(_Mem, _Query, _K) ->
     [].
 
-search_texts({ok, QVec}, Index, Texts, K) when length(QVec) =:= ?DIM ->
-    hits_to_texts(catch hecate_vector:search(Index, QVec, K), Texts);
-search_texts({ok, QVec}, _Index, _Texts, _K) when is_list(QVec) ->
-    logger:warning("[mind_memory] ignoring ~b-dim query vector; index expects ~b "
-                   "(embedder model mismatch?)", [length(QVec), ?DIM]),
-    [];
-search_texts(_Failed, _Index, _Texts, _K) ->
-    [].
-
-hits_to_texts({ok, Hits}, Texts) when is_list(Hits) ->
-    lists:filtermap(fun({Id, _Score}) -> lookup(Id, Texts) end, Hits);
-hits_to_texts(_Other, _Texts) ->
-    [].
-
-lookup(Id, Texts) ->
-    case maps:find(Id, Texts) of
-        {ok, Text} -> {true, Text};
-        error      -> false
-    end.
-
-%% @doc Bulk-remember a list of texts (boot seeding from replayed history).
+%% @doc Bulk-remember (boot seeding from replayed history).
 -spec seed(mem(), [binary()]) -> mem().
 seed(Mem, Texts) when is_list(Texts) ->
     lists:foldl(fun(T, M) -> remember(M, T) end, Mem, Texts).
 
 -spec size(mem()) -> non_neg_integer().
-size(#{texts := Texts}) -> map_size(Texts).
+size(#{entries := Es}) -> length(Es).
 
-%% One stable index name per mind. A node inhabits a handful of minds, so the
-%% handful of atoms this mints is bounded.
-index_name(Did) ->
-    list_to_atom("mind_mem_" ++ integer_to_list(erlang:phash2(Did))).
+%% --- lexical helpers ---
 
-new_id() ->
-    binary:encode_hex(crypto:strong_rand_bytes(16), lowercase).
+%% Lowercase, split on non-alphanumerics, drop very short words, dedup.
+tokens(Text) ->
+    Words = re:split(string:lowercase(Text), <<"[^a-z0-9]+">>, [{return, binary}]),
+    lists:usort([W || W <- Words, byte_size(W) > 2]).
+
+%% Overlap: how many of the query's tokens appear in the entry.
+score(QTokens, ETokens) ->
+    length([W || W <- QTokens, lists:member(W, ETokens)]).

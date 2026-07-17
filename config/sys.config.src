@@ -40,15 +40,6 @@
         {realm,             <<"${HECATE_REALM}">>}
     ]},
 
-    %% A mind's long-term memory embeds through a shared per-node hecate_embed
-    %% SERVICE (its own container on this host), reached over loopback, so the
-    %% node's minds do not each load a copy of the model. HECATE_EMBED_URL points
-    %% at that service; if it is unreachable, recall simply returns nothing.
-    {hecate_embed, [
-        {backend,    remote},
-        {remote_url, "${HECATE_EMBED_URL}"}
-    ]},
-
     %% Reckon-db pool defaults. The store itself is started by
     %% hecate_om:boot/1 via store_id/0 + data_dir/0 — do NOT add a
     %% {stores, [...]} list here.
