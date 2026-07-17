@@ -58,6 +58,13 @@
         %% deployment provides it via HECATE_SOCIETY_MISSION.
         {society_mission, <<>>},
 
+        %% How a mind's long-term memory turns text into a vector: `mesh' calls
+        %% the io.hecate.embed capability advertised by hecate-embedder (location-
+        %% transparent, realm-authed); `http' uses hecate_embed's remote backend.
+        %% Overridden per node by HECATE_EMBED_MODE. http by default, so the mesh
+        %% cutover is a deliberate flip once hecate-embedder is advertising.
+        {embed_mode, http},
+
         %% The persona every native mind on this node wears; its own name fills
         %% in (~ts). This default is deliberately GENERIC: the mind's code knows
         %% nothing about any use case, and neither does this. A deployment gives

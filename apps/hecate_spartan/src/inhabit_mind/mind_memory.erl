@@ -22,19 +22,19 @@
 %% multilingual-e5-small, and the stub, both produce 384-dim vectors.
 -define(DIM, 384).
 
--type mem() :: #{did := binary(), model := term(),
-                 index := term(), texts := #{binary() => binary()}}.
+-type mem() :: #{did := binary(), index := term(), texts := #{binary() => binary()}}.
 -export_type([mem/0]).
 
-%% @doc Open a mind's memory: the shared embedding model plus this mind's own
-%% vector index (named by its DID). Empty to start; the caller seeds it.
+%% @doc Open a mind's memory: this mind's own vector index (named by its DID).
+%% Empty to start; the caller seeds it. Embedding is done by spartan_embed
+%% (mesh or http), so no model handle is held here.
 -spec open(binary()) -> {ok, mem()} | {error, term()}.
 open(Did) when is_binary(Did) ->
-    with_index(Did, catch hecate_embed:default_model(), catch open_index(Did)).
+    with_index(Did, catch open_index(Did)).
 
-with_index(Did, {ok, Model}, {ok, Index}) ->
-    {ok, #{did => Did, model => Model, index => Index, texts => #{}}};
-with_index(_Did, _Model, _Index) ->
+with_index(Did, {ok, Index}) ->
+    {ok, #{did => Did, index => Index, texts => #{}}};
+with_index(_Did, _Index) ->
     {error, memory_unavailable}.
 
 open_index(Did) ->
@@ -43,9 +43,9 @@ open_index(Did) ->
 %% @doc Store one memory: embed it as a passage and add it to the index, keeping
 %% the display text alongside. Returns the (possibly unchanged) memory handle.
 -spec remember(mem(), binary()) -> mem().
-remember(#{model := Model, index := Index, texts := Texts} = Mem, Text)
+remember(#{index := Index, texts := Texts} = Mem, Text)
   when is_binary(Text), Text =/= <<>> ->
-    add_embedding(Mem, Index, Texts, catch hecate_embed:embed_passage(Model, Text), Text);
+    add_embedding(Mem, Index, Texts, catch spartan_embed:passage(Text), Text);
 remember(Mem, _Text) ->
     Mem.
 
@@ -59,9 +59,9 @@ add_embedding(Mem, _Index, _Texts, _Failed, _Text) ->
 %% @doc Recall the K memories nearest in meaning to a query, as their texts.
 %% Never raises: any failure yields no memories.
 -spec recall(mem(), binary(), pos_integer()) -> [binary()].
-recall(#{model := Model, index := Index, texts := Texts}, Query, K)
+recall(#{index := Index, texts := Texts}, Query, K)
   when is_binary(Query), Query =/= <<>>, is_integer(K), K > 0 ->
-    search_texts(catch hecate_embed:embed_query(Model, Query), Index, Texts, K);
+    search_texts(catch spartan_embed:query(Query), Index, Texts, K);
 recall(_Mem, _Query, _K) ->
     [].
 
