@@ -1,6 +1,14 @@
 # Elvis lint + eunit for hecate-spartan. Runs on the GitHub push-mirror
 # (Forgejo Actions disabled per the migration pattern). Enforces the org's
 # structural ruleset: no deep nesting (one level), no nested try/catch, no if.
+#
+# The macula + reckon NIFs (Ed25519/UCAN crypto, QUIC, CBOR, reckon-db) build
+# FROM SOURCE via cargo hooks. Without a Rust toolchain the .so files never
+# build, is_nif_loaded() is false, and the tests silently run macula's pure-
+# Erlang crypto fallback — which mints keys one way and signs them another,
+# crashing UCAN minting with invalid_private_key. So we install the exact
+# toolchain the Containerfile uses and force a source build: eunit then
+# exercises the real NIFs that ship, not a fallback prod never touches.
 name: lint-and-test
 on:
   push:
@@ -12,9 +20,41 @@ jobs:
     runs-on: ubuntu-latest
     container:
       image: erlang:28
+    env:
+      # crt-static off so the NIFs link as cdylibs (harmless on glibc, kept for
+      # parity with the Alpine release build); force source over any fetched
+      # precompiled artifact so we never load a glibc-mismatched binary.
+      RUSTFLAGS: "-C target-feature=-crt-static"
+      MACULA_FORCE_SOURCE_BUILD: "1"
     steps:
       - uses: actions/checkout@v4
+
+      - name: Rust + C toolchain (macula/reckon NIFs build from source)
+        run: |
+          set -eu
+          apt-get update
+          apt-get install -y --no-install-recommends build-essential cmake perl curl
+          curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs \
+            | sh -s -- -y --default-toolchain stable --profile minimal
+          # rebar3's cargo hooks run in a subprocess whose PATH excludes
+          # /root/.cargo/bin, so surface the rustup proxies on the default PATH
+          # (they dispatch on argv[0]). Same trick the Containerfile uses.
+          ln -sf /root/.cargo/bin/rustup /usr/local/bin/cargo
+          ln -sf /root/.cargo/bin/rustup /usr/local/bin/rustc
+          ln -sf /root/.cargo/bin/rustup /usr/local/bin/rustup
+          cargo --version && rustc --version
+
+      - name: Cache cargo registry + git
+        uses: actions/cache@v4
+        with:
+          path: |
+            /root/.cargo/registry
+            /root/.cargo/git
+          key: cargo-${{ runner.os }}-${{ hashFiles('rebar.config') }}
+          restore-keys: cargo-${{ runner.os }}-
+
       - name: Elvis lint
         run: rebar3 lint
+
       - name: EUnit
         run: rebar3 eunit
