@@ -3,8 +3,9 @@
 %% hecate-gitops/system/hecate-spartan.env).
 %%
 %% Required env vars:
-%%   HECATE_DATA_DIR      On-disk root for the reckon-db store
-%%                        (Quadlet maps /bulk0/hecate/hecate-spartan here).
+%%   HECATE_DATA_DIR      On-disk root for the minds' Souls + keypairs
+%%                        (the compose mount maps a host dir here). Store-free:
+%%                        there is no reckon-db store.
 %%   HECATE_INGRESS_PORT  Entity-facing API port (default 8471).
 %%   HECATE_HEALTH_PORT   Loopback health port (default 8470).
 %%
@@ -18,7 +19,6 @@
 [
     {hecate_spartan, [
         {data_dir,       "${HECATE_DATA_DIR}"},
-        {event_store_id, hecate_spartan_store},
         {ingress_port,   ${HECATE_INGRESS_PORT}},
         {health_port,    ${HECATE_HEALTH_PORT}},
         %% Where this node is: the capital whose station it dials (e.g.
@@ -40,23 +40,12 @@
         {realm,             <<"${HECATE_REALM}">>}
     ]},
 
-    %% Reckon-db pool defaults. The store itself is started by
-    %% hecate_om:boot/1 via store_id/0 + data_dir/0 — do NOT add a
-    %% {stores, [...]} list here.
-    {reckon_db, [
-        {writer_pool_size,  5},
-        {reader_pool_size,  5},
-        {gateway_pool_size, 1}
-    ]},
-
-    %% evoq + reckon_evoq adapter wiring. Without it, evoq crashes on first
-    %% dispatch with {not_configured, event_store_adapter}.
-    {evoq, [
-        {event_store_adapter,  reckon_evoq_adapter},
-        {subscription_adapter, reckon_evoq_adapter},
-        {store_id,             hecate_spartan_store},
-        {consistency,          eventual}
-    ]},
+    %% Store-free (4a): no reckon-db store, no evoq dispatch. The reckon_db +
+    %% evoq apps still arrive transitively through hecate_om but are never
+    %% wired — nothing dispatches, and no store_id/0 callback means
+    %% hecate_om:boot/1 starts no store. Any {event_store_id,...} here would
+    %% resurrect it: replay/0 would call an unstarted store and loop on
+    %% no_workers. So it stays out.
 
     {kernel, [
         {logger_level, info}

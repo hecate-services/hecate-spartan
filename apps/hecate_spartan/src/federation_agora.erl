@@ -117,10 +117,18 @@ republish_recent() ->
         _DarkOrNoRealm            -> ok
     end.
 
+%% Re-announce this instance's own recent posts, read from the live in-memory
+%% feed. Store-free (4a): there is no log to replay, so the feed IS the memory of
+%% what we said. Peers dedup by post_id, so a spectator that connects late still
+%% hears the square.
 recent_own() ->
-    Posts = agora_post_published_v1:replay(),
-    Sorted = lists:sort(fun(A, B) -> at(A) >= at(B) end, Posts),
-    lists:sublist(Sorted, ?REPUBLISH_N).
+    Locals = local_dids(),
+    Own = [P || P <- hecate_spartan_agora:recent(200),
+                lists:member(mget(from, P), Locals)],
+    lists:sublist(Own, ?REPUBLISH_N).
+
+local_dids() ->
+    [maps:get(did, E) || E <- hecate_spartan_entities:all()].
 
 publish_each(Pool, Realm, Posts) ->
     lists:foreach(
@@ -129,12 +137,6 @@ publish_each(Pool, Realm, Posts) ->
                                maybe_publish_to_agora:fact(P))
       end, Posts),
     ok.
-
-at(P) ->
-    case mget(posted_at, P) of
-        N when is_integer(N) -> N;
-        _                    -> 0
-    end.
 
 deliver_to_local_minds(#{post_id := Id, from := From} = Post) ->
     Msg = #{msg_id  => Id,

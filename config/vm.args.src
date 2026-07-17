@@ -13,7 +13,7 @@
 ## Cluster cookie. Provisioned via the per-service env file, never baked in.
 -setcookie ${HECATE_COOKIE}
 
-## Schedulers online + async threads for reckon-db / mesh I/O.
+## Schedulers online + async threads for mesh I/O.
 +K true
 +A 16
 
