@@ -1,9 +1,17 @@
 %%% @doc Handler for the report_activity command.
+%%%
+%%% Store-free (4a): the pulse is pure mesh. dispatch validates and publishes the
+%%% spartan_activity fact directly — no local state at all (an activity report is
+%%% legible-to-spectators only; nothing here consumes it). No aggregate, no event
+%%% store, no projection.
+%%%
+%%% `handle/1' + `handle_from_map/1' remain as the pure validate-and-emit step.
+%%% `fact/1' + `topic/0' are the public contract. The `?KINDS' whitelist keeps a
+%%% watcher's badges honest: an unknown kind is rejected, not rendered as a
+%%% mystery.
 -module(maybe_report_activity).
 
--export([handle/1, handle_from_map/1, dispatch/1]).
-
--dialyzer({nowarn_function, [dispatch/1]}).
+-export([handle/1, handle_from_map/1, dispatch/1, fact/1, topic/0]).
 
 %% Kinds a watcher can colour differently. Anything else is rejected rather than
 %% rendered as a mystery badge.
@@ -27,21 +35,35 @@ handle(Command) ->
         {error, Reason} -> {error, Reason}
     end.
 
+%% @doc Report an activity, store-free: validate then publish the fact. Returns
+%% the legacy `{ok, Seq, Events}' shape so the ingress caller is untouched.
 -spec dispatch(report_activity_v1:report_activity_v1()) ->
     {ok, non_neg_integer(), [map()]} | {error, term()}.
 dispatch(Cmd) ->
-    #{activity_id := Id} = CmdMap = report_activity_v1:to_map(Cmd),
-    EvoqCmd = evoq_command:new(
-        report_activity,
-        activity_aggregate,
-        activity_aggregate:stream_id(Id),
-        CmdMap,
-        #{timestamp => erlang:system_time(millisecond)}
-    ),
-    Opts = #{store_id => hecate_spartan_store,
-             adapter => reckon_evoq_adapter,
-             consistency => eventual},
-    evoq_command_router:dispatch(EvoqCmd, Opts).
+    #{did := D, kind := K, summary := S} = Map = report_activity_v1:to_map(Cmd),
+    case validate(D, K, S) of
+        ok ->
+            Data = activity_data(Map),
+            _ = publish_fact(Data),
+            {ok, 0, [Data]};
+        {error, _} = E ->
+            E
+    end.
+
+-spec topic() -> binary().
+topic() -> <<"spartan/activity">>.
+
+-spec fact(map()) -> map().
+fact(Data) ->
+    #{type        => spartan_activity,
+      activity_id => gf(activity_id, Data),
+      did         => gf(did, Data),
+      kind        => gf(kind, Data),
+      summary     => gf(summary, Data),
+      at          => gf(at, Data),
+      locale      => hecate_spartan_service:locale()}.
+
+%% --- Internal ---
 
 validate(Did, Kind, Summary) ->
     case {byte_size(Did), lists:member(Kind, ?KINDS), byte_size(Summary)} of
@@ -50,3 +72,23 @@ validate(Did, Kind, Summary) ->
         {_, _, 0}     -> {error, empty_summary};
         _             -> ok
     end.
+
+activity_data(Map) ->
+    maps:with([activity_id, did, kind, summary, at], Map).
+
+%% Dark is the expected degraded state: no mesh client, no realm, or the
+%% hecate_om identity server not up yet (early boot). The pulse is mesh-only, so
+%% while dark a report simply is not seen — no local consumer to miss it.
+publish_fact(Data) ->
+    try {hecate_om:macula_client(), hecate_om_identity:realm()} of
+        {{ok, Pool}, {ok, Realm}} ->
+            catch macula:publish(Pool, Realm, topic(), fact(Data)),
+            ok;
+        _DarkOrNoRealm ->
+            ok
+    catch _:_ ->
+        ok
+    end.
+
+gf(AtomKey, Data) ->
+    maps:get(AtomKey, Data, maps:get(atom_to_binary(AtomKey, utf8), Data, undefined)).

@@ -63,11 +63,6 @@ init([]) ->
         %% the agents are free to ignore it.
         worker(federation_ask),
 
-        %% The pulse: what each agent is DOING between messages (action,
-        %% thought, model call). Without it an autonomous agent that thinks for
-        %% three minutes is indistinguishable from a dead one.
-        projection(on_activity_reported_publish_fact),
-
         %% Entity-facing HTTP ingress + /health listener. Depends on identity
         %% (UCAN minting), the registry, and the inbox, so it starts last.
         worker(hecate_spartan_ingress),
