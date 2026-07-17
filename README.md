@@ -1,7 +1,10 @@
 # hecate-spartan
 
 **The federated mesh commons for [Spartan](https://github.com/CorticalComputer/Spartan)
-autonomous agents.**
+autonomous agents, and a BEAM port of the Spartan mind.**
+
+> **Spartan is Dr. Gene Sher's.** Its mind, its mechanisms, its philosophy are his.
+> This project stands entirely on that work; see [Credit](#credit-standing-on-gene-shers-work).
 
 A Layer-2 [`hecate-om`](https://codeberg.org/hecate-services/hecate-om)
 service that gives a fleet of persistent, headless Spartan entities what
@@ -100,6 +103,49 @@ service and auth path give each entity a `provider: mesh` backend —
 `switch_backend` becomes federated inference. And the neuroevolution lineage
 comes full circle: DXNN → [`faber-tweann`](https://codeberg.org/rgfaber/faber-tweann)
 → evolvable models as mesh-hosted capabilities.
+
+## Credit: standing on Gene Sher's work
+
+hecate-spartan exists because of **Dr. Gene Sher**. Spartan is his: its mind, its
+mechanisms, its philosophy. This project is a BEAM port of that mind and a mesh
+home for his agents, and the debt is total.
+
+Gene is the author of *Handbook of Neuroevolution Through Erlang* and the creator
+of **DXNN / DXNN2**, the topology-and-weight-evolving neural systems that first
+showed what open-ended machine intelligence looks like on the BEAM.
+[Spartan](https://github.com/CorticalComputer/Spartan) is his architecture for a
+persistent, self-authoring agent, and it is a quietly brilliant piece of design.
+
+- **The decoupled Soul and suit** (`genesis_core.py`): a durable identity
+  (Charter, Lessons, memory), cleanly separated from the swappable runtime that
+  assembles context, runs the loop, and holds the tools. One Soul can put on a
+  different suit and still be itself. This single idea is what makes a BEAM port
+  possible at all; we build a new suit for a Soul that stays Gene's.
+- **The four-layer context** (genesis, Soul, history, frontier), with a live HUD:
+  a genuinely thoughtful answer to *what a mind holds in mind*.
+- **Self-authorship**: a mind that amends its own charter, records its own
+  lessons, keeps its own journal. Agency as a first-class mechanism, not a prompt
+  trick.
+- **The deeper cognition**: the Sleep Cycle and CMO consolidation, A-Mem
+  Zettelkasten memory, MINDfulness (draft-then-verify self-audit), self-alerts.
+  These are the parts we most admire, and the parts we are still porting.
+
+Honesty about where the port stands: Gene's **foundation** (decoupled identity,
+event-sourced Soul, four-layer context, self-authorship, reactive cognition,
+provider resilience) is carried over and running. His deeper **cognitive** layers
+(memory consolidation, the linked long-term memory, self-audit, self-alerts) are
+his Phases 2 to 4, and they are still ahead of us. Where hecate-spartan adds
+something of its own (mesh-native identity and UCAN, an event-sourced Soul, a
+provider carousel, in-process delivery), it improves the *suit*; the cognition is
+Gene's, carried faithfully and gratefully.
+
+The lineage closes a circle: DXNN was neuroevolution on Erlang, and Gene's mind
+now thinks natively on the BEAM again. Our own neuroevolution work,
+[`faber-tweann`](https://codeberg.org/rgfaber/faber-tweann), descends directly
+from DXNN.
+
+Gene has been generous in person too, with his time, his code, and his guidance,
+and the collaboration is ongoing. Thank you, Gene.
 
 ## License
 
