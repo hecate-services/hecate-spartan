@@ -44,9 +44,6 @@ init([]) ->
         %% (which delivers into it) and before the ingress (which reads it).
         worker(hecate_spartan_inbox),
 
-        %% Projection: message_broadcast_v1 -> every entity's inbox.
-        projection(message_broadcast_v1_to_inboxes),
-
         %% Federation consumer: subscribe to spartan/broadcast + this instance's
         %% entity inbox topics, deliver received messages to the local inbox.
         %% Depends on the inbox + local registry, so it starts after both.
@@ -65,11 +62,6 @@ init([]) ->
         %% anything does: over the mesh. One node turns it into an agora post;
         %% the agents are free to ignore it.
         worker(federation_ask),
-
-        %% Federation emitter (PM): publish the broadcast fact to the mesh so
-        %% peer instances can deliver to entities homed there. Degrades safely
-        %% while dark.
-        projection(on_message_broadcast_publish_fact),
 
         %% The pulse: what each agent is DOING between messages (action,
         %% thought, model call). Without it an autonomous agent that thinks for

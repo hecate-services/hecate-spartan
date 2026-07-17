@@ -17,11 +17,11 @@ routed_topic_is_recipient_scoped_test() ->
 broadcast_fact_shape_test() ->
     Data = #{msg_id => <<"m2">>, from => <<"did:key:a">>,
              body => <<"all">>, sent_at => 3},
-    F = on_message_broadcast_publish_fact:fact(Data),
+    F = maybe_broadcast_message:fact(Data),
     ?assertEqual(spartan_broadcast, maps:get(type, F)),
     ?assertEqual(<<"all">>, maps:get(body, F)),
     ?assertNot(maps:is_key(to, F)).
 
 broadcast_topic_test() ->
     ?assertEqual(<<"spartan/broadcast">>,
-                 on_message_broadcast_publish_fact:topic(<<"realm">>)).
+                 maybe_broadcast_message:topic(<<"realm">>)).

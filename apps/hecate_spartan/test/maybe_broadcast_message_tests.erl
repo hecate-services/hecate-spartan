@@ -23,11 +23,9 @@ fanout_delivers_to_all_but_sender_test() ->
     _ = [ets:insert(entities, {D, #{did => D}})
          || D <- [<<"did:key:a">>, <<"did:key:b">>, <<"did:key:c">>]],
 
-    {ok, _S, RM} = message_broadcast_v1_to_inboxes:init(#{}),
-    Event = #{event_type => <<"message_broadcast_v1">>,
-              data => #{msg_id => <<"m1">>, from => <<"did:key:a">>,
-                        body => <<"all hands">>, sent_at => 1}},
-    {ok, _S2, _RM2} = message_broadcast_v1_to_inboxes:project(Event, #{}, #{}, RM),
+    Cmd = broadcast_message_v1:new(<<"m1">>, <<"did:key:a">>,
+                                   <<"all hands">>, 1),
+    {ok, _V, _E} = maybe_broadcast_message:dispatch(Cmd),
     timer:sleep(50),
 
     ?assertEqual(1, length(hecate_spartan_inbox:pending(<<"did:key:b">>))),

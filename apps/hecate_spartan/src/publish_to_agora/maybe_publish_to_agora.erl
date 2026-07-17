@@ -94,13 +94,18 @@ deliver_to_local_minds(#{post_id := Id, from := From} = Post) ->
     _ = [hecate_spartan_inbox:deliver(Did, Msg) || Did <- Listeners],
     ok.
 
+%% Dark is the expected degraded state: no mesh client, no realm, or the
+%% hecate_om identity server not up yet (early boot). Any of these means the post
+%% stays home, which is fine — it already landed in the feed and the inboxes.
 publish_fact(Data) ->
-    case {hecate_om:macula_client(), hecate_om_identity:realm()} of
+    try {hecate_om:macula_client(), hecate_om_identity:realm()} of
         {{ok, Pool}, {ok, Realm}} ->
             catch macula:publish(Pool, Realm, topic(), fact(Data)),
             ok;
         _DarkOrNoRealm ->
             ok
+    catch _:_ ->
+        ok
     end.
 
 safe_service_did() ->

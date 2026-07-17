@@ -90,13 +90,18 @@ deliver_if_local(#{to := To} = Data) ->
 inbox_msg(#{msg_id := M, from := F, body := B, sent_at := At}) ->
     #{msg_id => M, from => F, body => B, sent_at => At}.
 
+%% Dark is the expected degraded state: no mesh client, no realm, or the
+%% hecate_om identity server not up yet (early boot). Any of these means the fact
+%% stays home; a local recipient was already delivered to in-process.
 publish_fact(#{to := To} = Data) ->
-    case {hecate_om:macula_client(), hecate_om_identity:realm()} of
+    try {hecate_om:macula_client(), hecate_om_identity:realm()} of
         {{ok, Pool}, {ok, Realm}} ->
             catch macula:publish(Pool, Realm, topic(Realm, To), fact(Data)),
             ok;
         _DarkOrNoRealm ->
             ok
+    catch _:_ ->
+        ok
     end.
 
 gf(AtomKey, Data) ->
