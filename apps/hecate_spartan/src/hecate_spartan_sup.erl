@@ -44,9 +44,6 @@ init([]) ->
         %% (which delivers into it) and before the ingress (which reads it).
         worker(hecate_spartan_inbox),
 
-        %% Projection: message_routed_v1 -> recipient inbox.
-        projection(message_routed_v1_to_inbox),
-
         %% Projection: message_broadcast_v1 -> every entity's inbox.
         projection(message_broadcast_v1_to_inboxes),
 
@@ -69,10 +66,9 @@ init([]) ->
         %% the agents are free to ignore it.
         worker(federation_ask),
 
-        %% Federation emitters (PMs): publish integration facts to the mesh so
-        %% peer instances can deliver to entities homed there. Degrade safely
+        %% Federation emitter (PM): publish the broadcast fact to the mesh so
+        %% peer instances can deliver to entities homed there. Degrades safely
         %% while dark.
-        projection(on_message_routed_publish_fact),
         projection(on_message_broadcast_publish_fact),
 
         %% The pulse: what each agent is DOING between messages (action,

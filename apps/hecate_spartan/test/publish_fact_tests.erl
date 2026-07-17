@@ -5,14 +5,14 @@
 routed_fact_shape_test() ->
     Data = #{msg_id => <<"m1">>, from => <<"did:key:a">>, to => <<"did:key:b">>,
              body => <<"hi">>, sent_at => 9},
-    F = on_message_routed_publish_fact:fact(Data),
+    F = maybe_route_message:fact(Data),
     ?assertEqual(spartan_message, maps:get(type, F)),
     ?assertEqual(<<"did:key:b">>, maps:get(to, F)),
     ?assertEqual(<<"hi">>, maps:get(body, F)).
 
 routed_topic_is_recipient_scoped_test() ->
     ?assertEqual(<<"spartan/inbox/did:key:b">>,
-                 on_message_routed_publish_fact:topic(<<"realm">>, <<"did:key:b">>)).
+                 maybe_route_message:topic(<<"realm">>, <<"did:key:b">>)).
 
 broadcast_fact_shape_test() ->
     Data = #{msg_id => <<"m2">>, from => <<"did:key:a">>,
