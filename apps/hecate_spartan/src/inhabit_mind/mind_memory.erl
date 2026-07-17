@@ -49,10 +49,14 @@ remember(#{index := Index, texts := Texts} = Mem, Text)
 remember(Mem, _Text) ->
     Mem.
 
-add_embedding(Mem, Index, Texts, {ok, Vec}, Text) ->
+add_embedding(Mem, Index, Texts, {ok, Vec}, Text) when length(Vec) =:= ?DIM ->
     Id = new_id(),
     _ = catch hecate_vector:add(Index, Id, Vec),
     Mem#{texts => Texts#{Id => Text}};
+add_embedding(Mem, _Index, _Texts, {ok, Vec}, _Text) when is_list(Vec) ->
+    logger:warning("[mind_memory] dropping ~b-dim embedding; index expects ~b "
+                   "(embedder model mismatch?)", [length(Vec), ?DIM]),
+    Mem;
 add_embedding(Mem, _Index, _Texts, _Failed, _Text) ->
     Mem.
 
@@ -65,8 +69,12 @@ recall(#{index := Index, texts := Texts}, Query, K)
 recall(_Mem, _Query, _K) ->
     [].
 
-search_texts({ok, QVec}, Index, Texts, K) ->
+search_texts({ok, QVec}, Index, Texts, K) when length(QVec) =:= ?DIM ->
     hits_to_texts(catch hecate_vector:search(Index, QVec, K), Texts);
+search_texts({ok, QVec}, _Index, _Texts, _K) when is_list(QVec) ->
+    logger:warning("[mind_memory] ignoring ~b-dim query vector; index expects ~b "
+                   "(embedder model mismatch?)", [length(QVec), ?DIM]),
+    [];
 search_texts(_Failed, _Index, _Texts, _K) ->
     [].
 

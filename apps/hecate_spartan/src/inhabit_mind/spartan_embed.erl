@@ -20,6 +20,12 @@
 
 -export([query/1, passage/1]).
 
+-ifdef(TEST).
+%% The mesh-result parser is pure; exposed so tests can feed it the shapes a
+%% macula:call returns (incl. CBOR atom-vs-binary vector key) without a realm.
+-export([interpret/1]).
+-endif.
+
 -define(PROCEDURE, <<"io.hecate.embed">>).
 -define(TIMEOUT_MS, 30000).
 

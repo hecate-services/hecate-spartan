@@ -13,6 +13,7 @@ embed_test_() ->
      [
       fun http_mode_returns_a_vector/0,
       fun mesh_mode_degrades_without_mesh/0,
+      fun mesh_result_parsing/0,
       fun bad_input_guarded/0
      ]}.
 
@@ -32,6 +33,21 @@ mesh_mode_degrades_without_mesh() ->
         ?assertMatch({error, _}, spartan_embed:query(<<"anything">>)),
         ?assertMatch({error, _}, spartan_embed:passage(<<"anything">>))
     end).
+
+mesh_result_parsing() ->
+    %% The seam that silently breaks if the embedder's reply shape or CBOR key
+    %% encoding changes. A macula:call yields {ok, #{vector => [...]}} with the
+    %% key as an atom or a binary depending on the CBOR round-trip; both must
+    %% parse. Anything else degrades to {error, _} so a mind recalls nothing.
+    ?assertEqual({ok, [1.0, 2.0]},
+                 spartan_embed:interpret({ok, #{vector => [1.0, 2.0]}})),
+    ?assertEqual({ok, [3.0]},
+                 spartan_embed:interpret({ok, #{<<"vector">> => [3.0]}})),
+    ?assertMatch({error, _}, spartan_embed:interpret({ok, #{}})),
+    ?assertMatch({error, _}, spartan_embed:interpret({ok, #{vector => not_a_list}})),
+    ?assertMatch({error, _}, spartan_embed:interpret({ok, <<"not a map">>})),
+    ?assertMatch({error, _}, spartan_embed:interpret({error, timeout})),
+    ?assertMatch({error, _}, spartan_embed:interpret({'EXIT', boom})).
 
 bad_input_guarded() ->
     %% Non-binary input has no clause; the guard means it fails fast rather than
