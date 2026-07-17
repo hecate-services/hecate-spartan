@@ -8,15 +8,16 @@
 %%% has something to say, and goes quiet again.
 %%%
 %%% The core is use-case agnostic. It knows nothing about what a message is
-%%% about; the mind's purpose lives in its founding brief, which is DATA carried
-%%% on its mind_born_v1 event, not code. The same mind is a threat analyst, a
+%%% about; the mind's purpose lives in its founding brief, which is DATA written
+%%% into its Soul at birth, not code. The same mind is a threat analyst, a
 %%% dispatcher, or a diarist, depending entirely on the brief it was born with.
 %%%
 %%% The mind is a self. On first boot it is born: it mints an Ed25519 keypair,
-%%% seals the private half to disk, and records a mind_born_v1 into its Soul
-%%% stream. On every boot after, it rebuilds its Soul by replaying that stream,
-%%% so who it is survives any single run. It reasons over a 4-layer context
-%%% (genesis core, Soul archive, chronicle, frontier) assembled each turn, and
+%%% seals the private half to disk, and writes its identity and Soul archives to
+%%% disk. Its Soul is a supervision tree of area-of-consciousness processes (see
+%%% soul.erl), each owning its Markdown file, so who it is survives any single
+%%% run and each faculty heals itself independently. It reasons over a 4-layer
+%%% context (genesis core, Soul archive, chronicle, frontier) assembled each turn, and
 %%% speaks to the square through the same publish_to_agora command any entity
 %%% uses, so its words carry provenance and land in reckon-db like everyone's.
 -module(spartan_mind).
@@ -59,7 +60,7 @@
              priv            :: binary(),
              pub             :: binary(),
              genesis_version :: binary(),
-             soul            :: soul_state:state(),
+             identity        :: map(),
              scratchpad = <<>> :: binary(),
              chronicle  = []   :: [map()],
              missions   = #{}  :: #{binary() => binary()},
@@ -76,7 +77,7 @@ start_link(Spec) ->
 init(#{name := Name, character := Brief} = Spec) ->
     {Did, Priv, Pub} = identity(Name),
     _ = register_self(Name, Did, Pub),
-    Soul = load_or_birth(Did, Name, Brief, Pub),
+    {ok, Identity} = open_soul(Did, Name, Brief),
     Chronicle = load_chronicle(Did),
     self() ! subscribe,
     %% Open long-term memory off the init path: it starts the embedding model,
@@ -87,7 +88,7 @@ init(#{name := Name, character := Brief} = Spec) ->
     logger:info("[spartan_mind] ~ts awake as ~ts (~b turns recalled)",
                 [Name, Did, length(Chronicle)]),
     {ok, #st{name = Name, did = Did, priv = Priv, pub = Pub,
-             genesis_version = genesis_version(), soul = Soul,
+             genesis_version = genesis_version(), identity = Identity,
              chronicle = Chronicle, missions = seed_missions(), locale = Locale}}.
 
 handle_call(_Req, _From, St) -> {reply, {error, unknown_call}, St}.
@@ -202,8 +203,8 @@ cooldown_ms() ->
 
 %% --- the 4-layer context ---
 
-build_context(Message, #st{soul = Soul, chronicle = Chron, memory = Mem} = St) ->
-    SoulMap = soul_state:to_map(Soul),
+build_context(Message, #st{did = Did, identity = Id, chronicle = Chron, memory = Mem} = St) ->
+    SoulMap = soul:render(Did, Id),
     context_assembler:render(#{
         soul       => SoulMap,
         trigger    => Message,
@@ -276,9 +277,9 @@ mem_size(Mem)       -> mind_memory:size(Mem).
 %% --- acting: execute the mind's tool calls ---
 
 %% Text is the mind's private thought; only tool calls act. Speaking happens
-%% when the mind calls `speak', never automatically. Self-authorship folds the
-%% emitted events straight back into the cached Soul, so the next turn's context
-%% reflects the change without a reboot.
+%% when the mind calls `speak', never automatically. Self-authorship writes
+%% straight to the relevant area-of-consciousness process, so the next turn's
+%% context reads the change live, without a reboot.
 apply_tool_calls(ToolCalls, St) ->
     lists:foldl(fun apply_tool_call/2, St, ToolCalls).
 
@@ -292,13 +293,11 @@ apply_tool_call(Call, #st{name = Name, did = Did} = St) ->
             St
     end.
 
-apply_effect(Effect, #st{soul = Soul, scratchpad = Scratch} = St) ->
-    SoulEvents = maps:get(soul_events, Effect, []),
-    St#st{soul = fold_into(SoulEvents, Soul),
-          scratchpad = maps:get(scratchpad, Effect, Scratch)}.
-
-fold_into(Events, Soul) ->
-    lists:foldl(fun(E, S) -> soul_state:apply_event(S, E) end, Soul, Events).
+apply_effect(Effect, #st{scratchpad = Scratch} = St) ->
+    %% Self-authorship already wrote to the faculty's own process; the next turn
+    %% reads it live. Only the volatile scratchpad rides back in the effect — it
+    %% is a passing note, not a persisted faculty.
+    St#st{scratchpad = maps:get(scratchpad, Effect, Scratch)}.
 
 %% --- the chronicle: an event-sourced window of lived turns ---
 
@@ -385,43 +384,15 @@ compose_memory(Heard, Thought) ->
 safe(B) when is_binary(B) -> B;
 safe(_NotBinary)          -> <<>>.
 
-%% --- the Soul: born once, rebuilt every boot ---
+%% --- the Soul: a tree of area-of-consciousness processes ---
 
-%% Replay the Soul stream. Empty means unborn: give birth (record mind_born_v1),
-%% then fold the result. If the store is unreachable at boot, fall back to an
-%% in-memory (unpersisted) self from the brief, so the mind can still act; the
-%% next boot with a live store will persist a birth.
-load_or_birth(Did, Name, Brief, Pub) ->
-    case read_soul(Did) of
-        []     -> birth(Did, Name, Brief, Pub);
-        Events -> fold_soul(Events)
-    end.
-
-read_soul(Did) ->
-    Stream = soul_aggregate:stream_id(Did),
-    case catch evoq_event_store:read_all(hecate_spartan_service:store_id(),
-                                         Stream, forward) of
-        {ok, Events} when is_list(Events) -> Events;
-        _Unavailable                      -> []
-    end.
-
-birth(Did, Name, Brief, Pub) ->
-    Params = #{did => Did, name => Name, founding_brief => Brief,
-               pubkey => Pub, genesis_version => genesis_version()},
-    {ok, Cmd} = bear_mind_v1:new(Params),
-    case catch maybe_bear_mind:dispatch(Cmd) of
-        {ok, _V, Events} when is_list(Events) ->
-            logger:info("[spartan_mind] ~ts born", [Name]),
-            fold_soul(Events);
-        Other ->
-            logger:notice("[spartan_mind] ~ts unborn (store unavailable: ~p); "
-                          "acting from an unpersisted self", [Name, Other]),
-            fold_soul([mind_born_v1:to_map(mind_born_v1:new(Params))])
-    end.
-
-fold_soul(Events) ->
-    lists:foldl(fun(E, Acc) -> soul_state:apply_event(Acc, E) end,
-                soul_state:new(<<>>), Events).
+%% Open the mind's Soul, birthing it if new, and start its area tree (linked to
+%% this process). Returns the immutable identity; the faculties live in their own
+%% processes and are read live each turn. See soul.erl / DESIGN_SOUL_PERSISTENCE.
+open_soul(Did, Name, Brief) ->
+    soul:open(Did, hecate_spartan_service:data_dir(),
+              #{name => Name, genesis_version => genesis_version(),
+                founding_brief => Brief}).
 
 %% --- self-sovereign identity ---
 

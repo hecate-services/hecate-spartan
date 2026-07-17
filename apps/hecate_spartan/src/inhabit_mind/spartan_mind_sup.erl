@@ -41,8 +41,8 @@ spec(Name) ->
 %% A mind's founding brief reaches it as data, not code. HECATE_MIND_ROLE, if
 %% set, is used verbatim as the brief (write the mind's purpose there, naming it
 %% however you like). Otherwise the app-env `mind_role' template is rendered
-%% with the mind's name. Either way the brief becomes the mind's mind_born_v1
-%% founding_brief; the core stays agnostic.
+%% with the mind's name. Either way the brief becomes the mind's founding brief,
+%% written into its Soul at birth; the core stays agnostic.
 render_role(Name) ->
     case os:getenv("HECATE_MIND_ROLE") of
         Brief when is_list(Brief), Brief =/= "" ->

@@ -98,30 +98,24 @@ l2(Soul) ->
         "Name: ", mget(name, Soul, <<"(unnamed)">>), "\n",
         "DID: ", mget(did, Soul, <<"(no did)">>), "\n",
         brief_block(mget(founding_brief, Soul, <<>>)),
-        charter_block(mget(charter, Soul, [])),
-        lessons_block(mget(lessons, Soul, [])),
-        journal_block(mget(journal, Soul, []))
+        charter_block(mget(charter, Soul, <<>>)),
+        lessons_block(mget(lessons, Soul, <<>>)),
+        journal_block(mget(journal, Soul, <<>>))
     ]).
 
 brief_block(<<>>) -> [];
 brief_block(Brief) -> ["\nWhy you exist:\n", Brief, "\n"].
 
-charter_block([]) -> [];
-charter_block(Entries) ->
-    ["\nYour charter:\n", [charter_line(E) || E <- Entries]].
+%% Charter, lessons, and journal are Markdown blobs, each owned by its own
+%% area-of-consciousness process (soul_area); include them as the mind wrote them.
+charter_block(<<>>) -> [];
+charter_block(Md)   -> ["\nYour charter:\n", Md, "\n"].
 
-charter_line(E) ->
-    ["- (", mget(entry_type, E, <<"?">>), ") ", mget(statement, E, <<>>), "\n"].
+lessons_block(<<>>) -> [];
+lessons_block(Md)   -> ["\nLessons you have learned:\n", Md, "\n"].
 
-lessons_block([]) -> [];
-lessons_block(Lessons) ->
-    ["\nLessons you have learned:\n",
-     [["- ", mget(lesson, L, <<>>), "\n"] || L <- Lessons]].
-
-journal_block([]) -> [];
-journal_block(Journal) ->
-    ["\nRecent reflections:\n",
-     [["- ", mget(entry, J, <<>>), "\n"] || J <- tail(?JOURNAL_TAIL, Journal)]].
+journal_block(<<>>) -> [];
+journal_block(Md)   -> ["\nYour cognitive journal:\n", Md, "\n"].
 
 %% ===================================================================
 %% L3 — the chronicle window
@@ -173,11 +167,7 @@ nonempty(Bin)  -> Bin.
 
 sys(Content) -> #{role => <<"system">>, content => Content}.
 
-%% Soul fields carry atom keys (from soul_state:to_map); chronicle turns are
-%% built with atom keys by the mind. Accept binary keys too, defensively.
+%% Soul fields carry atom keys (from soul:render); chronicle turns are built with
+%% atom keys by the mind. Accept binary keys too, defensively.
 mget(Key, Map, Default) when is_atom(Key) ->
     maps:get(Key, Map, maps:get(atom_to_binary(Key, utf8), Map, Default)).
-
-tail(N, List) ->
-    Len = length(List),
-    lists:nthtail(max(0, Len - N), List).

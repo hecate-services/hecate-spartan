@@ -7,10 +7,10 @@
 %%% self-authorship. Query tools (recall, consult, reach_web) that return data
 %%% for a follow-up turn, and capability-gated world tools, land in later waves.
 %%%
-%%% Effect shape returned by execute/2:
-%%%   #{soul_events => [map()],   %% events to fold into the cached Soul (persisted)
-%%%     scratchpad  => binary(),  %% a new volatile scratchpad (not persisted)
-%%%     ack         => binary()}  %% a short human-readable acknowledgement
+%%% Self-authorship writes straight to the mind's area-of-consciousness
+%%% processes (see soul.erl); nothing is folded back here. Effect shape:
+%%%   #{scratchpad => binary(),  %% a new volatile scratchpad (not persisted)
+%%%     ack        => binary()}  %% a short human-readable acknowledgement
 %%% Any key may be absent.
 -module(mind_tools).
 
@@ -104,28 +104,22 @@ enum(Values) -> #{type => <<"string">>, enum => Values}.
 execute(#{name := <<"speak">>, args := A}, #{did := Did}) ->
     speak(gv(<<"body">>, A, <<>>), Did);
 execute(#{name := <<"amend_charter">>, args := A}, #{did := Did}) ->
-    Params = #{did => Did,
-               entry_type => gv(<<"entry_type">>, A, <<"principle">>),
-               statement  => gv(<<"statement">>, A, <<>>),
-               derivation => gv(<<"derivation">>, A, <<>>)},
-    soul_effect(fun maybe_amend_charter:dispatch/1, amend_charter_v1:new(Params),
-                <<"charter amended">>);
+    ok = soul:amend_charter(Did, #{entry_type => gv(<<"entry_type">>, A, <<"principle">>),
+                                   statement  => gv(<<"statement">>, A, <<>>),
+                                   derivation => gv(<<"derivation">>, A, <<>>)}),
+    {ok, #{ack => <<"charter amended">>}};
 execute(#{name := <<"record_lesson">>, args := A}, #{did := Did}) ->
-    Params = #{did => Did, lesson => gv(<<"lesson">>, A, <<>>)},
-    soul_effect(fun maybe_record_lesson:dispatch/1, record_lesson_v1:new(Params),
-                <<"lesson recorded">>);
+    ok = soul:record_lesson(Did, gv(<<"lesson">>, A, <<>>)),
+    {ok, #{ack => <<"lesson recorded">>}};
 execute(#{name := <<"reflect">>, args := A}, #{did := Did}) ->
-    Params = #{did => Did, entry => gv(<<"entry">>, A, <<>>)},
-    soul_effect(fun maybe_record_reflection:dispatch/1, record_reflection_v1:new(Params),
-                <<"reflection recorded">>);
+    ok = soul:record_reflection(Did, gv(<<"entry">>, A, <<>>)),
+    {ok, #{ack => <<"reflection recorded">>}};
 execute(#{name := <<"set_grand_strategy">>, args := A}, #{did := Did}) ->
-    Params = #{did => Did, text => gv(<<"content">>, A, <<>>)},
-    soul_effect(fun maybe_revise_grand_strategy:dispatch/1,
-                revise_grand_strategy_v1:new(Params), <<"grand strategy revised">>);
+    ok = soul:set_grand_strategy(Did, gv(<<"content">>, A, <<>>)),
+    {ok, #{ack => <<"grand strategy revised">>}};
 execute(#{name := <<"set_working_memory">>, args := A}, #{did := Did}) ->
-    Params = #{did => Did, text => gv(<<"content">>, A, <<>>)},
-    soul_effect(fun maybe_revise_working_memory:dispatch/1,
-                revise_working_memory_v1:new(Params), <<"working memory revised">>);
+    ok = soul:set_working_memory(Did, gv(<<"content">>, A, <<>>)),
+    {ok, #{ack => <<"working memory revised">>}};
 execute(#{name := <<"set_scratchpad">>, args := A}, _Ctx) ->
     {ok, #{scratchpad => gv(<<"content">>, A, <<>>), ack => <<"scratchpad updated">>}};
 execute(#{name := <<"convene_committee">>, args := A}, #{did := Did}) ->
@@ -167,16 +161,6 @@ binary_int(N) ->
         {I, _} when is_integer(I) -> I;
         _NotAnInt                 -> 3
     end.
-
-%% --- self-authorship folds back into the Soul ---
-soul_effect(Dispatch, {ok, Cmd}, Ack) ->
-    case Dispatch(Cmd) of
-        {ok, _V, Events} -> {ok, #{soul_events => Events, ack => Ack}};
-        {error, _} = E   -> E;
-        Other            -> {error, {dispatch_failed, Other}}
-    end;
-soul_effect(_Dispatch, {error, Reason}, _Ack) ->
-    {error, Reason}.
 
 %% Tool-call arguments arrive as decoded JSON: binary keys, binary values.
 gv(Key, Args, Default) when is_binary(Key) ->
