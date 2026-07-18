@@ -1,11 +1,11 @@
 # 005 — The experiment as three mesh services
 
-**Status:** DRAFT, going to Fable for red-team. Origin: the operator's proposal to
-translate the whole program (003 metric, 004 contract) into hecate-om services —
-an experimenting harness of **hecate-challenger / hecate-arbiter /
-hecate-challenged**, where the challenged is a Spartan. This note argues it is the
-right shape, with three refinements, and that it incidentally solves problems 001
-left open.
+**Status:** red-teamed (round 5). Verdict: the right *deployment* story for the
+league/federation phase, but the **pilot runs local-first** — running it over the
+mesh would break 003's paired statistics. See the Decision at the end. Origin: the
+operator's proposal to translate the program (003 metric, 004 contract) into
+hecate-om services — **hecate-challenger / hecate-arbiter / hecate-challenged**,
+the challenged being a Spartan.
 
 ## ELI5
 
@@ -74,18 +74,17 @@ in-process = training. Conflating them would be a fatal performance mistake.
 Once arms are challengeds and the arbiter ranks them, you have a **league**: many
 challengeds (different arms, engines, kernels, and eventually different people's
 Spartans on their own nodes) all facing one challenger, ranked by one neutral
-referee, with a signed public record. That is, at once:
+referee, with a signed public record. That gives, honestly:
 - **selection** — the good rise, the bad are culled (001's missing pressure),
-- **accumulation** — the track record is the compounding artifact (001's missing
-  memory),
-- **division of labour** — world / referee / contestant are genuinely different
-  jobs (001's missing structure),
+- **accumulation** — the signed track record is the compounding artifact 001 lacked,
 - **federation** — sovereign, mesh-native, anyone can enter a challenged.
 
-So the operator's three-service instinct is not just an implementation of the
-experiment; it is the concrete form of the "society with stakes" that 001 could
-only gesture at. The society was never N chatbots in a room; it is N contestants in
-a league with a real referee.
+**Not** division of labour, and this is Fable's correction to an oversell: ranked
+rival predictors are still N interchangeable opinion-generators, now with scores.
+Competition is not super-additivity. (The three *roles* — world/referee/contestant
+— are a real division of labour at the harness level; the *contestants* are not.)
+So the league is the "society with **stakes**" 001 wanted, but it is not yet a
+society of minds that compose. Don't conflate the two.
 
 ## It also resolves the language question toward BEAM
 
@@ -96,16 +95,20 @@ that is now viable rather than dogmatic: Gene Sher's neuroevolution lineage (DXN
 net engine needs them, go through NIFs (faber-tweann's existing path). The whole
 harness can be BEAM-native and sovereign, which is on-mission.
 
-## The pilot, restated as services
+## The pilot, restated (local modules, service-shaped API)
 
-The pilot (003) is now concrete and small:
-- **hecate-challenger** in frozen mode: the seeded non-stationary generator.
-- **hecate-arbiter**: scores the control arms (A, B, D, E), computes the metric and
-  the achievable-error reference, estimates variance to fix `N`. It does *not* yet
-  need the kill-threshold verdict logic (no C yet).
-- **hecate-challenged** in control configs only (A/B/D/E) — none of which need the
-  unresolved hard parts (inject-into-a-net, the kernel-owned encoder). C comes after
-  the pilot validates the apparatus.
+The pilot (003) is one BEAM node, three modules behind the API the services would
+later expose:
+- **challenger** (frozen mode): the seeded non-stationary generator.
+- **arbiter** (pure module): scores the control arms sequentially — identical
+  stream per seed, so pairing holds — computes the metric and the achievable-error
+  reference, estimates variance to fix `N`. No verdict logic yet (no C).
+- **challenged** in control configs only (A/B/D/E) — none need the unresolved hard
+  parts (inject-into-a-net, the kernel-owned encoder). C comes after the pilot
+  validates the apparatus.
+
+Same module boundaries as the eventual services, so lifting it onto the mesh later
+is a transport change, not a rewrite.
 
 ## Ties back
 
@@ -115,16 +118,61 @@ The pilot (003) is now concrete and small:
   challenged swap; the inject asymmetry means the net-engine challenged must be
   co-evolved in-process before it enters the league.
 
-## Open for Fable
+## What Fable's red-team changed (round 5)
 
-1. Is three services the right cut, or is the arbiter secretly two jobs (registrar
-   vs scorer) that should be split so the scorer can't quietly change the registry?
-2. Predict-ahead over the mesh: does async delivery (a late/dropped prediction)
-   create a scoring ambiguity a challenged could exploit (e.g., strategically
-   "dropping" hard steps)?
-3. Does making it a league invite Goodhart — challengeds that game the arbiter's
-   specific metric rather than predict well — and does that show up as the
-   validity floor failing, or silently?
-4. Is "mesh = outer loop, evolution = in-process" a clean seam, or does the
-   co-evolution-with-kernel requirement (004) drag the inner loop back onto the
-   mesh anyway?
+The verdict: **a good federation story, a premature science story, and — run
+naively over the mesh — actively destructive to the statistics.** Folded in:
+
+- **Two trust domains, not three.** The arbiter's answer key *is* the challenger's
+  schedule, and `e*_r` is fit on the challenger's generator, so challenger and
+  arbiter are inevitably one trust domain. The only load-bearing boundary in the
+  falsification phase is **{challenged} vs {everything else}**. Three services is a
+  fine *deployment topology* for the league later; it is not three trust domains.
+- **Integrity is reproducibility, not isolation.** A signed registry protecting
+  *mutable* scoring code is security theatre. The fix: the pre-registration hash
+  covers the **scoring code and the reference-predictor (`e*_r`) code**, and scoring
+  is a deterministic pure function of (schedule, predictions). Anyone replays the
+  verdict from frozen artifacts; a quietly-amending scorer is caught by replay.
+  Replay-determinism is a stronger integrity mechanism than service isolation at a
+  tenth of the cost. We reached for topology when we needed referential
+  transparency.
+- **The mesh breaks the pairing — the sharpest catch.** 003's power rests on
+  *paired* comparisons: every arm sees the *identical* observation sequence per
+  seed. Async delivery with deadlines and drops means arms experience *different*
+  effective streams (one arm's late prediction becomes a penalty step, another's
+  does not), which un-pairs the statistics and silently voids the power calculation.
+  Local sequential execution gives pairing for free. **This is why the pilot must
+  not run over the mesh.**
+- **Predict-ahead needs a specified timing contract** (only if/when distributed):
+  missing/late = scored at a penalty no better than the naive baseline's worst
+  case (never skipped, or selective silence prunes hard steps); first-commit-wins,
+  signed, deduped per (challenged, step); outcome revealed only after the deadline.
+  Ugly consequence: the deadline must exceed the slowest engine (colibri 2-4
+  min/step), so a distributed run is hostage to the mesh contract. Another vote for
+  local-first.
+- **Falsification = a CLOSED league**, all arms authored by us, no competitive
+  entry. An open, competitive league Goodharts *upward* (gaming the metric shows up
+  as excellent scores, which the validity floor passes silently), so it is a
+  different instrument for a different question (open-ended selection), explicitly
+  not pre-registered science.
+- **Concession to state in the pre-registration:** co-evolving a net requires an
+  inner-loop fitness signal, so the challenged embeds a replica of the generator
+  *family* and a clone of the scorer. Therefore the **generator family is public;
+  only the seed and schedule are secret.** Otherwise a critic says the challenged
+  trained on the test distribution.
+- **Later-league hazard:** sybil entries. Signed identity, one entry per principal,
+  or self-play pumps the rankings. A next-year problem.
+
+## Decision: local-first, services later
+
+Build the pilot as a **single local process** (one BEAM node, one module per arm,
+the arbiter as a **pure module behind the same API a service would later expose**).
+Publish the signed pre-registration **as a file in the repo** (a hash over the
+schedule generator + scoring code + `e*_r` code) — no mesh required for integrity.
+Keep this note as the *deployment* design for the league/federation phase, and
+build the module boundaries to match it, so nothing is rebuilt when it is lifted
+onto the mesh. **Distribute only once there is a number worth defending in public.**
+
+Blunt, and correct: this was round three of building the courtroom before the
+defendant exists. The kernel has still never once been asked to earn its keep. The
+next thing that happens is the pilot, local, producing a number.
