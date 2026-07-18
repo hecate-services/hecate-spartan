@@ -3,6 +3,16 @@
 **Status:** diagnosis accepted; the society track is parked (see the decision at the
 end). Superseded in direction by [002](002_what_backend_what_sensor.md).
 
+## ELI5
+
+We put four AI "minds" in a shared chat room, fed them the news, and hoped a
+"society" would emerge. It didn't. Four clever chatbots in a room mostly end up
+agreeing, because nothing makes them specialise, nothing makes them genuinely
+disagree, and nobody keeps score. It is like paying four consultants who all hand
+in the same memo. A real society is not "more chatbots": it needs jobs that fit
+together, a shared thing they build up over time, and real consequences for being
+wrong. So we are putting the chat room aside and going looking for those three.
+
 ## What we deployed
 
 N persistent headless Spartan minds (four: athena/analyst, saga/storyteller,

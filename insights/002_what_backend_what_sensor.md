@@ -3,6 +3,21 @@
 **Status:** open research. This note ends with a pre-registered experiment and a
 kill criterion, on purpose (see the last section on why).
 
+## ELI5
+
+An LLM is a brain that already knows a lot but never learns from living: its
+knowledge is frozen the day it was trained. Spartan's big idea is that the brain
+should be *swappable*, and eventually able to *evolve*. You cannot evolve a frozen
+brain. To test evolving brains you need a scoreboard, and you cannot get a clean
+scoreboard from opinions about the news, because words are mushy and rarely simply
+right or wrong. You need **numbers** with right answers. And a mind that keeps a
+memory only proves its worth when the world keeps **changing** (otherwise
+remembering is pointless). So the plan: feed a mind a stream of numbers whose
+hidden rules keep shifting, and measure who copes best. Practise in a cheap
+simulator first, then move to real energy-grid data. The catch we found: the LLM's
+one irreplaceable gift is *language itself*, which is the very material the Spartan
+"self" is written in, so we cannot simply throw it away.
+
 ## The question
 
 Round 1 ([001](001_society_of_minds_is_not_n_chatbots.md)) said: make speech

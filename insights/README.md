@@ -10,6 +10,10 @@ that produced these notes (with the operator and with an independent model,
 "Fable", used as an adversarial reviewer) are themselves part of the research, so
 they are captured rather than summarised away.
 
+**Convention: every note carries a short ELI5 section.** These ideas should be
+legible to any curious human, not just the people building it. If a note cannot be
+explained plainly, we do not understand it well enough yet.
+
 ## Log
 
 | # | Note | Question it sits on |
