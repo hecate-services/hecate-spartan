@@ -61,7 +61,7 @@ fact(Data) ->
       locale      => hecate_spartan_service:locale()}.
 
 -spec topic() -> binary().
-topic() -> <<"spartan/agora">>.
+topic() -> hecate_spartan_society:agora().
 
 %% --- Internal ---
 

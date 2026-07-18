@@ -51,7 +51,7 @@ dispatch(Cmd) ->
     end.
 
 -spec topic() -> binary().
-topic() -> <<"spartan/activity">>.
+topic() -> hecate_spartan_society:topic(<<"activity">>).
 
 -spec fact(map()) -> map().
 fact(Data) ->

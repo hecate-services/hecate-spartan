@@ -15,7 +15,6 @@
 -export([start_link/0]).
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2, terminate/2]).
 
--define(TOPIC, <<"spartan/ask">>).
 -define(RESUB_MS, 5_000).
 %% One question per 20s per node, so a page cannot flood eight thinking agents.
 -define(MIN_GAP_MS, 20_000).
@@ -53,7 +52,7 @@ do_subscribe(St) ->
     subscribe_with(hecate_om:macula_client(), hecate_om_identity:realm(), St).
 
 subscribe_with({ok, Pool}, {ok, Realm}, St) ->
-    on_sub(catch macula:subscribe(Pool, Realm, ?TOPIC, self()), St);
+    on_sub(catch macula:subscribe(Pool, Realm, hecate_spartan_society:topic(<<"ask">>), self()), St);
 subscribe_with(_Client, _Realm, St) ->
     retry(St).
 

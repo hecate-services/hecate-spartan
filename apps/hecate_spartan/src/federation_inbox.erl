@@ -18,7 +18,6 @@
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2, terminate/2]).
 
 -define(RECONCILE_MS, 5_000).
--define(BROADCAST_TOPIC, <<"spartan/broadcast">>).
 
 -record(st, {subs = #{} :: #{binary() => reference()}}). %% topic => subref
 
@@ -60,7 +59,7 @@ reconcile_with(_Client, _Realm, St) ->
     St.
 
 wanted_topics() ->
-    [?BROADCAST_TOPIC |
+    [hecate_spartan_society:topic(<<"broadcast">>) |
         [inbox_topic(D) || #{did := D} <- hecate_spartan_entities:all(),
                            is_binary(D)]].
 
@@ -72,12 +71,17 @@ ensure_sub(Pool, Realm, Topic, St) ->
         _Fail     -> St
     end.
 
-inbox_topic(Did) -> <<"spartan/inbox/", Did/binary>>.
+inbox_topic(Did) -> hecate_spartan_society:inbox(Did).
 
 %% --- Delivery ---
 
-deliver_event(?BROADCAST_TOPIC, Payload) -> deliver_broadcast(Payload);
-deliver_event(_InboxTopic, Payload)      -> deliver_direct(Payload).
+%% The broadcast topic is a runtime value (the society namespace), so we can't
+%% pattern-match it; compare instead.
+deliver_event(Topic, Payload) ->
+    case Topic =:= hecate_spartan_society:topic(<<"broadcast">>) of
+        true  -> deliver_broadcast(Payload);
+        false -> deliver_direct(Payload)
+    end.
 
 deliver_direct(F) when is_map(F) ->
     case mget(to, F) of

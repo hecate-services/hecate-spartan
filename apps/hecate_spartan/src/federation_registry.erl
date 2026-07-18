@@ -11,7 +11,6 @@
 -export([start_link/0]).
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2, terminate/2]).
 
--define(TOPIC, <<"spartan/registry">>).
 -define(RESUB_MS,      5_000).
 -define(REANNOUNCE_MS, 60_000).
 
@@ -51,7 +50,7 @@ do_subscribe(St) ->
     subscribe_with(hecate_om:macula_client(), hecate_om_identity:realm(), St).
 
 subscribe_with({ok, Pool}, {ok, Realm}, St) ->
-    on_sub(catch macula:subscribe(Pool, Realm, ?TOPIC, self()), St);
+    on_sub(catch macula:subscribe(Pool, Realm, hecate_spartan_society:topic(<<"registry">>), self()), St);
 subscribe_with(_Client, _Realm, St) ->
     retry_subscribe(St).
 
@@ -110,7 +109,7 @@ announce(Home, Entry) ->
              registered_at => maps:get(registered_at, Entry, 0)},
     case {hecate_om:macula_client(), hecate_om_identity:realm()} of
         {{ok, Pool}, {ok, Realm}} ->
-            catch macula:publish(Pool, Realm, ?TOPIC,
+            catch macula:publish(Pool, Realm, hecate_spartan_society:topic(<<"registry">>),
                                  maybe_register_entity:fact(Data, Home)),
             ok;
         _ ->

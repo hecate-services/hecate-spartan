@@ -59,7 +59,7 @@ fact(Data) ->
 
 -spec topic(binary()) -> binary().
 topic(_Realm) ->
-    <<"spartan/broadcast">>.
+    hecate_spartan_society:topic(<<"broadcast">>).
 
 %% --- Internal ---
 

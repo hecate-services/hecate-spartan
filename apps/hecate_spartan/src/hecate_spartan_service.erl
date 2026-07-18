@@ -52,7 +52,7 @@ identity_spec() ->
     #{
         scope     => <<"spartan">>,
         actions   => [<<"route">>, <<"broadcast">>, <<"advertise_entity">>],
-        resources => [<<"spartan/*">>],
+        resources => [hecate_spartan_society:wildcard()],
         ttl_days  => 30
     }.
 

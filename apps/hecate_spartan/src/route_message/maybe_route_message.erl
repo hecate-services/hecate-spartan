@@ -63,7 +63,7 @@ fact(Data) ->
 %% so the topic itself is relative).
 -spec topic(binary(), binary()) -> binary().
 topic(_Realm, To) ->
-    <<"spartan/inbox/", To/binary>>.
+    hecate_spartan_society:inbox(To).
 
 %% --- Internal ---
 

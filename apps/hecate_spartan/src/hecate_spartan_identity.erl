@@ -78,19 +78,19 @@ registration_challenge(Did, TsBin) ->
 %% operator can grant one without the other.
 -spec entity_caps(Realm :: binary(), EntityDid :: binary()) -> [map()].
 entity_caps(Realm, EntityDid) ->
-    [ #{with => <<"spartan/", Realm/binary, "/inbox/">>,
+    [ #{with => hecate_spartan_society:cap_resource(Realm, <<"inbox/">>),
         can => <<"msg/send">>},
-      #{with => <<"spartan/", Realm/binary, "/inbox/", EntityDid/binary>>,
+      #{with => hecate_spartan_society:cap_resource(Realm, <<"inbox/", EntityDid/binary>>),
         can => <<"msg/recv">>},
-      #{with => <<"spartan/", Realm/binary, "/broadcast">>,
+      #{with => hecate_spartan_society:cap_resource(Realm, <<"broadcast">>),
         can => <<"msg/send">>},
-      #{with => <<"spartan/", Realm/binary, "/artifact">>,
+      #{with => hecate_spartan_society:cap_resource(Realm, <<"artifact">>),
         can => <<"content/share">>},
-      #{with => <<"spartan/", Realm/binary, "/agora">>,
+      #{with => hecate_spartan_society:cap_resource(Realm, <<"agora">>),
         can => <<"agora/post">>},
-      #{with => <<"spartan/", Realm/binary, "/agora">>,
+      #{with => hecate_spartan_society:cap_resource(Realm, <<"agora">>),
         can => <<"agora/read">>},
-      #{with => <<"spartan/", Realm/binary, "/activity">>,
+      #{with => hecate_spartan_society:cap_resource(Realm, <<"activity">>),
         can => <<"activity/report">>} ].
 
 %% ===================================================================

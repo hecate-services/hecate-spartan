@@ -74,7 +74,7 @@ row(Data) ->
     }}.
 
 -spec topic() -> binary().
-topic() -> <<"spartan/registry">>.
+topic() -> hecate_spartan_society:topic(<<"registry">>).
 
 %% @doc The public announcement contract. `registered_at' travels with it: a peer
 %% uses it to decide which DID currently holds a name when an entity has

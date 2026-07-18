@@ -35,8 +35,6 @@
 %% fact on this topic (#{domain, directive}); a mind updates its mission set live
 %% (empty directive clears that domain). This is how the society's work is
 %% injected at runtime, from an operator or a use-case service.
--define(MISSION_TOPIC, <<"spartan/mission">>).
--define(TOPICS, [<<"spartan/broadcast">>, <<"spartan/agora">>, ?MISSION_TOPIC]).
 -define(RESUB_MS, 5000).
 -define(STM_SHOW, 8).
 
@@ -98,10 +96,8 @@ handle_info(subscribe, St) ->
     {noreply, do_subscribe(St)};
 handle_info(setup_memory, St) ->
     {noreply, setup_memory(St)};
-handle_info({macula_event, _Ref, ?MISSION_TOPIC, Payload, _Meta}, St) ->
-    {noreply, update_mission(Payload, St)};
-handle_info({macula_event, _Ref, _Topic, Payload, _Meta}, St) ->
-    {noreply, maybe_react(Payload, St)};
+handle_info({macula_event, _Ref, Topic, Payload, _Meta}, St) ->
+    {noreply, on_mesh_event(Topic, Payload, St)};
 handle_info({macula_event_gone, _Ref, _Reason}, St) ->
     self() ! subscribe,
     {noreply, St#st{subs = []}};
@@ -123,10 +119,30 @@ do_subscribe(St) ->
     subscribe_all(hecate_om:macula_client(), hecate_om_identity:realm(), St).
 
 subscribe_all({ok, Pool}, {ok, Realm}, St) ->
-    Refs = lists:filtermap(fun(T) -> sub_one(Pool, Realm, T) end, ?TOPICS),
-    keep_or_retry(Refs, St);
+    Topics = topics(),
+    Refs = lists:filtermap(fun(T) -> sub_one(Pool, Realm, T) end, Topics),
+    keep_or_retry(length(Refs) =:= length(Topics), Refs, St);
 subscribe_all(_Client, _Realm, St) ->
     retry(St).
+
+%% The mesh topics a mind attends: its society's FEED (signals from sensors), the
+%% AGORA (peers' speech), the broadcast channel, and the mission (standing
+%% context). All derived from HECATE_SOCIETY, so a news mind and a cyber mind run
+%% the same code on different namespaces.
+topics() ->
+    [hecate_spartan_society:feed(),
+     hecate_spartan_society:topic(<<"broadcast">>),
+     hecate_spartan_society:agora(),
+     hecate_spartan_society:topic(<<"mission">>)].
+
+%% A mission is standing context; everything else on the feed and the agora is
+%% stimulus to (maybe) react to. Route on a comparison because the topic is a
+%% runtime value, not a compile-time literal we can pattern-match.
+on_mesh_event(Topic, Payload, St) ->
+    case Topic =:= hecate_spartan_society:topic(<<"mission">>) of
+        true  -> update_mission(Payload, St);
+        false -> maybe_react(Payload, St)
+    end.
 
 sub_one(Pool, Realm, Topic) ->
     case catch macula:subscribe(Pool, Realm, Topic, self()) of
@@ -136,10 +152,8 @@ sub_one(Pool, Realm, Topic) ->
 
 %% All topics or none: a partial subscribe would leave a mind half-deaf, so
 %% retry until every topic is heard.
-keep_or_retry(Refs, St) when length(Refs) =:= length(?TOPICS) ->
-    St#st{subs = Refs};
-keep_or_retry(_Partial, St) ->
-    retry(St).
+keep_or_retry(true, Refs, St)   -> St#st{subs = Refs};
+keep_or_retry(false, _Refs, St) -> retry(St).
 
 retry(St) ->
     erlang:send_after(?RESUB_MS, self(), subscribe),

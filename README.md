@@ -87,6 +87,16 @@ agora. Deployed as a small cross-country society on the beam fleet. Remaining
 upstream gaps (multi-hop propagation, streaming RPC) still shape a wider
 cross-relay federation — see [`plans/PLAN_HECATE_SPARTAN.md`](plans/PLAN_HECATE_SPARTAN.md).
 
+## Societies (one codebase, many use cases)
+
+A **society** is a topic namespace: every topic a mind uses derives from
+`HECATE_SOCIETY` (default `spartan`). Sensors publish signals to `<ns>/feed`;
+minds discuss in `<ns>/agora`. So a second use case (a news society, a weather
+society) is a config change, not a new codebase: place a node's minds in another
+society and point a sensor at its feed. The mind's code knows nothing about the
+use case; the persona is data and the society is a namespace. See
+[`docs/DESIGN_SOCIETIES_AND_SENSORS.md`](docs/DESIGN_SOCIETIES_AND_SENSORS.md).
+
 ## Build
 
 ```bash

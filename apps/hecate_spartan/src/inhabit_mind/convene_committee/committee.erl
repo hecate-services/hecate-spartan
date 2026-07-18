@@ -27,7 +27,6 @@
 -define(TICK_MS, 4000).
 -define(TICK_JITTER_MS, 3000).
 -define(DEFAULT_ROUNDS, 2).
--define(TOPIC_PREFIX, <<"spartan/committee/">>).
 
 -record(cs, {id          :: binary(),
              convener    :: binary(),
@@ -49,7 +48,7 @@ init(#{convener := Convener, question := Question} = Spec) ->
     logger:info("[committee] ~ts convened by ~ts: ~b drones on ~ts",
                 [Id, Convener, length(Drones), snippet(Question)]),
     schedule_tick(),
-    {ok, #cs{id = Id, convener = Convener, topic = <<?TOPIC_PREFIX/binary, Id/binary>>,
+    {ok, #cs{id = Id, convener = Convener, topic = hecate_spartan_society:committee(Id),
              question = Question, drones = Drones,
              max_rounds = maps:get(max_rounds, Spec, ?DEFAULT_ROUNDS)}}.
 
