@@ -1,8 +1,10 @@
 # 003 — The metric and the kill threshold (pre-registration)
 
-**Status:** hardened after Fable's red-team (round 3). Still one step from frozen:
-the seed count `N` is set by a pilot (below), and the run is blocked on the
-engine-agnostic kernel contract (next note). Everything else is committed. The
+**Status:** hardened after Fable's red-team (rounds 3-4; round 4 added **arm E**,
+the memory-only control, closing a confound that would have handed a meaningless
+pass). Still one step from frozen: the seed count `N` is set by a pilot (below),
+and the run is blocked on the engine-agnostic kernel contract ([004](004_engine_agnostic_kernel_contract.md)).
+Everything else is committed. The
 point of this document is to write the number down *before* building anything, so
 the programme cannot quietly become serial reframing.
 
@@ -78,11 +80,22 @@ Hard pre-registration constraints (each closes a specific rigging):
   unattributable.)
 - **C. kernel-on** — same engine + episodic similarity-retrieved memory + the D
   detector + carried state.
+- **E. memory-only** — the retrieval store used **directly as a predictor, engine
+  bypassed** (k-NN over the canonical keys, copy/interpolate the stored outcomes).
+  (Added per Fable r4 — see the confound below.)
 
 Attribution logic: C vs D isolates **episodic memory** (the thing left when you
-subtract the detector). C/D vs A/B isolates **detection+adaptation** from raw
-context. The kernel-as-designed earns its keep only if **C beats D**, not merely if
-C beats A.
+subtract the detector). C vs E isolates **the engine's contribution over its own
+memory**. C/D vs A/B isolates detection+adaptation from raw context. The
+kernel-as-designed earns its keep only if **C beats both D and E**.
+
+**The memory-as-predictor confound (why E exists).** k-NN over raw observation
+windows with outcomes attached *is a nonparametric predictor* (locally-weighted
+regression in a kernel costume). Without E, C could beat D purely because that
+side-predictor is good on regime-recurrent data, with the engine and `inject`
+contributing nothing — and we would announce "the kernel helps the engine" having
+actually shown "k-NN beats no k-NN". If **C ≈ E**, Experiment 1 tested a database,
+not a mind.
 
 **Compute is pre-registered as exact token counts per arm.** With an LLM engine,
 prompt length *is* compute; "same budget" is meaningless unless the injected
@@ -122,7 +135,7 @@ the task is trivial and the run is void (validates the *task*, not the kernel).
 ## Statistical protocol (frozen before any scored run)
 
 - **Power, honestly.** N=24 was a guess dressed as a calculation. Instead:
-  **pilot the control arms only (A, B, D)** to estimate the paired-difference
+  **pilot the control arms only (A, B, D, E)** to estimate the paired-difference
   variance, then fix `N` for the C-vs-D primary at 80% power for the threshold
   effect. No hypothesis arm (C) is touched during the pilot.
 - **Superiority margin.** "CI excludes a <10% effect" is a superiority-margin test:
@@ -143,11 +156,14 @@ prediction**:
    **2× faster than the detector-only arm** — with the step difference above the
    20-step floor and significant. *This is load-bearing: no memory advantage over a
    plain shift-detector means the episodic store is inert.*
-2. **Placebo:** no significant C-over-D advantage on first occurrences of novel
+2. **Engine-adds-value (primary):** `C` beats `E` (memory-only) by a significant
+   margin on the primary metric. *If C ≈ E the engine contributes nothing over its
+   own retrieval store — a database, not a mind. Equally load-bearing.*
+3. **Placebo:** no significant C-over-D advantage on first occurrences of novel
    regimes.
-3. **Regret (supporting):** paired absolute transient-regret difference `R̄(C) <
-   R̄(best of A,B,D)`, significant (Wilcoxon), effect consistent with ≥20%.
-4. **Guards:** `e∞(C) ≤ 1.05 ×` best control on **both** median and p95.
+4. **Regret (supporting):** paired absolute transient-regret difference `R̄(C) <
+   R̄(best of A,B,D,E)`, significant (Wilcoxon), effect consistent with ≥20%.
+5. **Guards:** `e∞(C) ≤ 1.05 ×` best control on **both** median and p95.
 
 **Why these.** 2× on recurrence-vs-detector is deliberately strong: recognising a
 regime you have literally stored is the *easiest* thing a memory can do, so a weak
@@ -170,11 +186,18 @@ N=24 guess with **pilot-then-power**; pre-registered **exact token budgets** and
 **generator-frozen-before-key**; made explicit that the kernel's claim is *memory
 beyond the context horizon*.
 
+## What Fable's red-team changed (round 4)
+
+Added arm **E** (memory-only, engine bypassed) and the **C-beats-E** kill
+condition, because k-NN over raw windows is itself a predictor: without E a
+"kernel helps" result could just be "k-NN beats no k-NN". C must now beat **both**
+D (memory over detector) and E (engine over its own memory). Recorded the honesty
+note that self-audit reduces to change-point detection at this scale.
+
 ## Still open (next steps)
 
-- The **engine-agnostic kernel contract** must exist before this runs (what is
-  "memory"/"self-audit"/"authorship" for a non-linguistic engine). That is the
-  real engineering research and the next note.
-- Run the **pilot** (A,B,D only) to fix `N` and the achievable-error references.
+- The **engine-agnostic kernel contract** ([004](004_engine_agnostic_kernel_contract.md))
+  must exist before this runs. Draft done; going another red-team round.
+- Run the **pilot** (A,B,D,E only) to fix `N` and the achievable-error references.
 - Define measurable **continuity across an engine swap** before Experiment 2, or it
   is unfalsifiable.

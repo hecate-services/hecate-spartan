@@ -1,167 +1,166 @@
 # 004 — The engine-agnostic kernel contract
 
-**Status:** DRAFT, going to Fable for red-team. This is the blocker for
-Experiment 1 ([003](003_metric_and_kill_threshold.md)): the kernel cannot be
-tested against a non-linguistic engine until we say what "memory", "self-audit",
-"self-authorship" and "continuity" mean when there are no words.
+**Status:** hardened after Fable's red-team (round 4). Buildable, with four fixes
+folded in and one that reaches back and changes the experiment ([003](003_metric_and_kill_threshold.md)):
+a new **arm E**. Still the blocker for Experiment 1, but now honest about what it
+does and does not claim.
 
 ## ELI5
 
-A "mind" here has two parts: the **brain** (the engine — maybe a language model,
-maybe an evolved neural net) and the **self** (the kernel — its memory, its
-habits, its name). We want the self to run on *either* kind of brain, and to
-survive when you swap the brain out. So we have to describe what the self *does*
-without assuming it thinks in words.
+A "mind" here has two parts: the **brain** (the engine — a language model or an
+evolved net) and the **self** (the kernel — its memory, habits, name). We want the
+self to run on either brain and survive a brain swap, so we describe what the self
+*does* without assuming it thinks in words.
 
-This note pins down the small set of things any brain must offer the self (roughly:
-turn what it senses into a *fingerprint*, make a guess with a *confidence*, and
-report *how wrong* it was), and what the self builds on top: a **notebook** of
-fingerprints it can look up, an **alarm** for when it is suddenly wrong, a set of
-**adjustable habits**, and a **name** that stays the same when the brain is
-replaced.
+The brain must offer a few primitives (turn input into a *fingerprint*, make a
+guess with a *confidence*, say *how wrong* it was, and take looked-up notes back
+in). The self adds a **notebook**, an **alarm** for sudden wrongness, some
+**adjustable habits**, and the ability to **distil many notes into a few rules of
+thumb**.
 
-It is also honest about one thing that probably *cannot* be carried to a wordless
-brain: **writing your own story about who you are.** That needs language. Which is
-exactly why the long-term plan keeps a language model around as the "narrator" even
-when an evolved net does the fast thinking.
+Two honest catches this round: (1) writing your own *story* about who you are needs
+language, so a wordless brain can't do it (that's why the plan keeps a language
+model as narrator). (2) A notebook you look things up in is *already a predictor by
+itself* (look up the nearest past situation, copy what happened). So we have to
+prove the brain-plus-notebook beats the **notebook alone** — otherwise we've just
+shown a filing cabinet works, not that we built a mind.
 
-## The stance: classify faculties, don't pretend they all port
+## The stance: sort faculties, don't pretend they all port
 
-The kernel today is prompt-shaped: memory is text in a prompt, self-audit is a
-second text pass, self-authorship is editing a text Soul. The honest first move is
-not to force all of that onto a net, but to **sort each faculty into portable or
-language-bound**, and design only the portable ones as engine-agnostic.
+The kernel today is prompt-shaped. The honest move is to sort each faculty into
+portable or language-bound, and design only the portable ones as engine-agnostic.
 
-| Faculty | Portable to any engine? | Why |
+| Faculty | Portable? | Note |
 |---|---|---|
-| Perception / representation | yes (with a boundary, below) | every engine maps input to some internal vector |
+| Perception **slot** | yes | the *slot* ports; the representation inside it does not (see boundary) |
 | Episodic memory | yes | a similarity store over a canonical key space |
-| Self-audit (monitor + gate) | yes | built on scalar surprise/confidence, not words |
+| **Memory consolidation** (episodes → prototypes) | yes | distilling regime prototypes from traces is pure statistics; only the *linguistic* library is bound |
+| Self-audit (monitor + gate) | yes, but | reduces to change-point detection at this task scale (see honesty note) |
 | Policy adaptation | yes | a small parameter set the mind tunes |
-| Continuity across engine swap | yes (by construction) | the self lives outside the engine's weights |
-| **Narrative self-authorship** | **no** | editing a *linguistic* self-model needs language |
-| Two-tier knowledge library | no | linguistic retrieval + summarisation |
-| Linguistic reflection / drones | no | text reasoning |
+| Memory-transfer value across swap | yes | behavioural, not definitional (renamed from "continuity") |
+| **Narrative self-authorship** | no | editing a *linguistic* self-model needs language |
+| Linguistic knowledge library / reflection / drones | no | text reasoning |
 
-The bottom rows are not failures; they are the argument for the **hybrid**: the
-numeric engine gets the portable faculties, and an LLM "reflector" supplies the
-language-bound ones. The contract is honest that a bare numeric mind cannot author
-a narrative self, and that "my topology evolved" is selection acting on the mind,
-not the mind authoring itself.
+The bottom rows are the argument for the **hybrid**: numeric engine gets the
+portable faculties, an LLM reflector supplies the language-bound ones. And say the
+size out loud: **the portable Spartan is a memory store, a change detector, a
+consolidation step, and a dozen tuned scalars.** Small and falsifiable, not grand.
 
-## The engine interface (what any engine must implement)
+## The engine interface (all the kernel can see)
 
-The kernel talks to the engine only through these. Nothing else about the engine
-is visible to the kernel.
+- `perceive(observation) -> repr` — the engine's private representation (LLM
+  embedding; net activations). Used only as an optional retrieval re-rank, never as
+  the memory key.
+- `act(context) -> (action, uncertainty)` — prediction + self-reported uncertainty.
+- `surprise(prediction, outcome) -> scalar` — error signal.
+- `inject(context, traces) -> context'` — the channel by which retrieved memory
+  enters the next act. **This is not free (see the asymmetry below).**
+- `params` — opaque θ; `snapshot()`/`restore()`, and `vary()`/`select()` for
+  evolvable engines. The kernel never reads θ.
 
-- `perceive(observation) -> repr` — map an observation to the engine's own
-  representation vector. (LLM: an embedding. Net: hidden-layer activations.) Used
-  as an *optional* retrieval re-rank signal, never as the primary memory key (see
-  the representation boundary).
-- `act(context) -> (action, uncertainty)` — produce the prediction/action plus a
-  self-reported uncertainty. (LLM: token logprobs / ensemble spread. Net: output
-  distribution / ensemble variance.)
-- `surprise(prediction, outcome) -> scalar` — how wrong the last act was. The raw
-  material of self-audit and shift detection.
-- `inject(context, traces) -> context'` — the engine-specific channel by which
-  retrieved memory enters the next act. (LLM: exemplars as prompt tokens. Net:
-  retrieved trace vectors concatenated to the input, or used to modulate
-  activations.) **This is the operation people forget exists**, and it is where the
-  "what does memory mean to a net" question is actually answered.
-- `params` — opaque weights θ, with `snapshot()` / `restore()`, and for an
-  evolvable engine `vary()` / `select()`. The kernel treats θ as a black box it can
-  save, reload, and (for nets) breed. It never reads θ.
+## The kernel faculties
 
-## The kernel faculties, defined on that interface
+**Memory.** Store of `(key, context, action, outcome, surprise)`. The **key is in a
+kernel-owned, engine-independent space**, with three named options in ascending
+richness:
+1. **raw observation features** — trivially portable; sufficient for the low-dim
+   synthetic stream of Experiment 1.
+2. **kernel-owned learned encoder** — a small autoencoder/contrastive encoder
+   trained on the mind's *own* observation history. Engine-independent (the kernel
+   owns it, it survives swaps) yet learned (needed for any rich observation space).
+   **This is the pre-registered answer for anything past the toy stream**, and the
+   fix for the false dichotomy the draft had (raw features vs the engine's repr).
+3. the engine's private `repr` — richest, non-portable; used only as a recomputed
+   re-rank at retrieval time.
 
-**Memory.** A store of traces `(key, context, action, outcome, surprise)`. The
-**key is in a canonical, engine-independent space** (raw observation features),
-*not* the engine's `repr`. Retrieval = k-NN in canonical space, optionally
-re-ranked by the current engine's `perceive`. A gating policy decides what to store
-and what to forget. Retrieved traces enter the next act via `engine.inject`. This
-is the faculty Experiment 1 tests: arm C = kernel with this store; arm D = kernel
-with the store *empty* (monitor only).
+Retrieval = k-NN in the canonical key space (option 1 or 2), optional re-rank by
+option 3. A gating policy decides store/forget. Retrieved traces enter the next act
+via `engine.inject`.
 
-**Self-audit (monitor + gate).** Consumes the `surprise` trend, `uncertainty`, and
-the disagreement between the engine's action and the memory-implied action. Emits
-one of {accept, defer, adapt, flag}. "Draft-then-verify" becomes: engine proposes,
-kernel checks the proposal against these signals, then accepts / defers / triggers
-adaptation. The shift-detector is exactly this monitor with memory switched off —
-which is why it *is* arm D.
+**Self-audit (monitor + gate).** Consumes `surprise` trend + `uncertainty` +
+engine-vs-memory disagreement, emits {accept, defer, adapt, flag}. **Honesty note:
+at Experiment 1's scale this reduces to change-point detection (CUSUM with extra
+inputs).** That is fine, arm D is an honest control precisely because of it, but a
+C-over-D result is *not* evidence for "self-audit" in the rich sense. Self-audit
+only becomes more than detection when its output *drives* something: gating
+consolidation, spending the policy budget, or (in the hybrid) triggering linguistic
+reflection.
 
-**Policy adaptation (the portable slice of "self-authorship").** A small parameter
-set the mind owns and adjusts from its own performance review: retrieval threshold,
-forget rate, gate thresholds, goal/priority weights. Deliberately called
-*adaptation*, not authorship: the mind tuning its own knobs from experience is real
-and portable, but it is not the same as narrating a self, and we will not dress it
-up as such.
+**Policy adaptation.** A small parameter set (retrieval threshold, forget rate,
+gate thresholds, goal weights) the mind tunes from its own performance. Called
+*adaptation*, not authorship, on purpose.
 
-**Continuity across engine swap.** The self = {identity, memory, policies,
-self-model}, and it lives **outside θ by construction**, so swapping the engine
-preserves it. The hard part, and the reason the memory key is canonical: an old
-engine's `repr` is meaningless to a new engine, so a memory indexed on engine
-embeddings would be dead on swap. Canonical keys survive; the new engine's
-`perceive` re-rank is simply recomputed. Measurable continuity (per 003) =
-retention of behaviour/score across a mid-life swap.
+**Memory-transfer value across an engine swap** (renamed from "continuity").
+Continuity-as-defined was circular: the self survives a swap *because we put it
+outside θ*. The non-tautological, measurable quantity is behavioural: **new engine
++ old memory vs new engine + fresh memory, same task.** If the old memory helps the
+new engine, the self transferred something real. "Identity" is otherwise just a
+label on a key-value store and does no work; drop the grand word, keep the number.
 
-## The representation boundary (the load-bearing design call)
+## The representation boundary (the load-bearing call)
 
-Everything hinges on one line: **the kernel owns a canonical, engine-independent
-representation (observation features); the engine owns its private `repr`.** Memory
-keys, policies, and identity live in canonical space and port across engines. The
-engine's learned `repr` is richer but non-portable, so it is used only as a
-recomputed re-rank signal, never as the thing the self is stored in.
+The kernel owns the canonical key space; the engine owns its private `repr`. The
+draft framed this as raw-features vs engine-repr, which was a false dichotomy: the
+**kernel-owned learned encoder** (option 2 above) is engine-independent *and*
+learned. For Experiment 1 (low-dim, regime identity recoverable from raw
+statistics) raw keys are fine and do not gut C-vs-D. The death-on-arrival risk is
+*deferred, not absent*: it returns with any rich observation space, and the
+kernel-owned encoder is the pre-committed answer.
 
-The tension is real and worth stating plainly: canonical keys throw away the
-engine's learned similarity, which is often the best similarity. We accept that
-cost to buy cross-engine continuity, and we let the engine's `repr` claw some of it
-back at retrieval time. Whether that trade is worth it is itself measurable (memory
-keyed canonical-only vs canonical+repr-rerank is an ablation).
+## The `inject` asymmetry (the deepest finding of this round)
 
-## Engine realizations
+Bolting memory onto a net's input is **not** free. Concatenating retrieved trace
+vectors only helps if the net was trained/evolved *with that channel populated*;
+otherwise it ignores the channel (zero weights) or degrades. Every real
+memory-augmented architecture (DNC, retrieval-augmented RL, fast-weights) trained
+memory end-to-end. **The competence to exploit `inject` is itself a learned
+faculty: LLMs get it for free from pretraining (in-context learning); nets must be
+evolved to possess it.**
 
-| Contract op | LLM engine | Evolved-net engine |
-|---|---|---|
-| `perceive` | text embedding | hidden activations |
-| `act` | decode; uncertainty from logprobs/ensemble | forward pass; uncertainty from ensemble variance |
-| `surprise` | error vs outcome (or NLL) | prediction error |
-| `inject` | retrieved exemplars as prompt tokens | retrieved trace vectors concatenated / modulating input |
-| `params` snapshot/restore | checkpoint (frozen) | genome save; `vary`/`select` = evolution |
-| narrative authorship | native (edits linguistic Soul) | absent — needs the LLM reflector (hybrid) |
+Consequences, stated as limitations rather than discovered later:
+- The *interface* is engine-agnostic; the engine's *competence* to use it is not.
+- Phase-2 evolution must evolve the net **in the presence of the kernel** (kernel
+  and engine are not cleanly separable). Experiment 2's engine-swap will otherwise
+  "fail" for a reason the contract pretended away.
+- Expect a **coevolution moving target**: the inject channel's statistics depend on
+  the store, which depends on gating policies being tuned concurrently. Plan for
+  the instability; do not be surprised by it.
 
-## Ties to the experiment (003)
+## Ties to the experiment (003), including a new arm
 
-- Arm **D** (detector-only) = the self-audit monitor with an empty memory store.
-- Arm **C** (kernel-on) = D plus the episodic memory faculty.
-- So **C vs D is precisely a test of the memory faculty as defined here**, holding
-  the monitor constant. Clean attribution, which was the whole point of adding D.
-- **Continuity** = kernel state (canonical memory + policies + identity) survives an
-  engine swap; Experiment 2's retention metric measures it directly.
+- Arm **D** (detector-only) = self-audit monitor, empty store.
+- Arm **C** (kernel-on) = D + episodic memory + inject.
+- Arm **E** (memory-only) = the retrieval store used **directly as a predictor,
+  engine bypassed** (k-NN over the canonical keys, copy/interpolate the stored
+  outcomes). **New this round, and non-negotiable.**
+
+Why E is non-negotiable: k-NN over raw observation windows with outcomes attached
+*is a nonparametric predictor* (locally-weighted regression in a kernel costume).
+Without E, C could beat D purely because that side-predictor is good on
+regime-recurrent data, with the engine and `inject` contributing nothing — and we
+would announce "the kernel helps the engine" having actually shown "k-NN beats no
+k-NN", a result from the 1970s. **The kernel claim survives only if C beats E *and*
+D:** the engine must add value over its own memory, and the memory over the
+detector. If C ≈ E, Experiment 1 tested a database, not a mind. (003 is updated to
+carry arm E and this threshold.)
 
 ## Honest concessions (say them before Fable does)
 
-- **Narrative self-authorship does not port.** A bare numeric mind adapts policies;
-  it does not author a self. This is a real limit and the case for the hybrid.
-- **Canonical keys sacrifice the engine's best similarity** for portability. A
-  bet, and an ablatable one.
-- **Self-reported uncertainty is unreliable** (LLM verbalized confidence is poorly
-  calibrated). Prefer ensemble/consistency signals over `uncertainty` where they
-  disagree.
-- **"Policy adaptation from performance" edges toward being learning/selection by
-  another name.** We do not claim it is authorship; we claim it is portable and
-  measurable, nothing more.
+- **Narrative self-authorship does not port.** The case for the hybrid.
+- **"Continuity" was circular**; the honest quantity is memory-transfer value.
+- **The memory-as-predictor confound** is real and is why arm E exists.
+- **`inject` competence is a learned faculty**, free for LLMs, evolved for nets;
+  engine and kernel are not cleanly separable.
+- **Self-audit reduces to change-point detection** at this scale; do not cite
+  C-over-D as evidence of rich self-audit.
+- **Self-reported uncertainty is unreliable**; prefer ensemble/consistency signals.
+- **Policy adaptation edges toward learning/selection**; not claimed as authorship.
 
-## Open for Fable
+## Open for Fable (next round)
 
-1. Is the portable/language-bound split honest, or am I quietly smuggling the hard
-   parts into "language-bound" to make the rest look clean?
-2. Is the canonical-vs-engine representation boundary the right call, or does it
-   gut the memory faculty so badly that C-can-never-beat-D and the experiment is
-   dead on arrival?
-3. `inject` for a net (concatenate retrieved vectors / modulate activations) — is
-   that a real mechanism or hand-waving? Does it make the net's input non-stationary
-   in a way that breaks training/evolution?
-4. Is there a faculty I have mis-sorted (something I called portable that secretly
-   needs language, or vice versa)?
-5. What is the one thing in this contract that, if wrong, silently invalidates
-   Experiment 1?
+1. Does arm E fully close the confound, or can C still "pass" by laundering the
+   memory predictor through `inject` while the engine adds nothing?
+2. Is the kernel-owned learned encoder itself a confound (it is trained on the same
+   history the memory stores — double-dipping)?
+3. Given the inject asymmetry, is Experiment 2 (LLM-vs-net swap) even well-posed, or
+   must the net be co-evolved with the kernel first, making "swap" meaningless?
