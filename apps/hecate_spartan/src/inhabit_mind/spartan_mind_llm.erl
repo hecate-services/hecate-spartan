@@ -25,6 +25,14 @@
 %%% bad window, another answers, and per-key rate limits self-heal without the
 %%% society retrying in lockstep. Adding a provider is a clause in
 %%% provider_config/1 plus a name in a mind's HECATE_MIND_PROVIDERS.
+%%%
+%%% HECATE_MIND_FALLBACK_PROVIDERS (CSV) names LAST-RESORT providers, appended
+%%% after the whole primary schedule and never shuffled into it. A slow but
+%%% sovereign local engine (colibrì) belongs here: it keeps the society alive
+%%% when the fast paid brokers all fail (the cost-bleed lesson) without ever
+%%% slowing a normal turn. A provider may declare its own `timeout' and
+%%% `max_tokens' in provider_config/1 so a seconds-per-token engine finishes a
+%%% short reply instead of hitting the fast-provider ?TIMEOUT_MS.
 -module(spartan_mind_llm).
 
 -export([reason/2, reason_messages/1, reason_messages/2]).
@@ -54,6 +62,13 @@
 %% default points at a serve on the same host, for the single-box experiment.
 -define(COLIBRI_URL_DEFAULT, "http://127.0.0.1:8000/v1/chat/completions").
 -define(COLIBRI_MODEL_DEFAULT, <<"glm-5.2">>).
+%% colibrì is CPU inference at seconds-per-token, so it gets its OWN patience and
+%% output cap: a 10-min window and a short reply, so a FALLBACK turn finishes
+%% instead of timing out at the fast-provider ?TIMEOUT_MS. It is never in the
+%% primary rotation (see fallback_schedule/0), so this slowness never touches a
+%% normal turn.
+-define(COLIBRI_TIMEOUT_MS, 600000).
+-define(COLIBRI_MAX_TOKENS, 160).
 
 -define(TIMEOUT_MS, 120000).
 -define(MAX_TOKENS, 500).
@@ -133,7 +148,8 @@ provider_config("mistral")  -> #{fmt => openai, url => ?MISTRAL_URL, model => ?M
 provider_config("melious")  -> #{fmt => openai, url => ?MELIOUS_URL, model => melious_model(),
                                  keyenv => "MELIOUS_API_KEY", label => "melious"};
 provider_config("colibri")  -> #{fmt => openai, url => colibri_url(), model => colibri_model(),
-                                 keyenv => "COLIBRI_API_KEY", label => "colibri", keyless => true};
+                                 keyenv => "COLIBRI_API_KEY", label => "colibri", keyless => true,
+                                 timeout => ?COLIBRI_TIMEOUT_MS, max_tokens => ?COLIBRI_MAX_TOKENS};
 provider_config(_Unknown)   -> undefined.
 
 %% colibrì's endpoint + model are deployment facts (which box, which converted
@@ -169,7 +185,23 @@ melious_model() ->
 %% free tier, rather than pinning the primary and only failing over. Keys within
 %% a provider are shuffled too, so nothing is hit in lockstep.
 attempts() ->
-    schedule(shuffle(lists:filtermap(fun pool/1, providers())), ?ATTEMPTS).
+    Primary = schedule(shuffle(lists:filtermap(fun pool/1, providers())), ?ATTEMPTS),
+    Primary ++ fallback_schedule().
+
+%% Fallback providers (HECATE_MIND_FALLBACK_PROVIDERS, CSV) are tried ONLY after
+%% the whole primary schedule is exhausted, and are NEVER shuffled into the
+%% primary rotation — so a slow sovereign engine (colibrì) keeps the society
+%% alive when the fast paid brokers fail (the cost-bleed lesson), without ever
+%% slowing a normal turn. One slot per configured fallback, in listed order.
+fallback_schedule() ->
+    [{Config, hd(Keys)}
+     || {Config, Keys} <- lists:filtermap(fun pool/1, fallback_providers())].
+
+fallback_providers() ->
+    case os:getenv("HECATE_MIND_FALLBACK_PROVIDERS") of
+        S when is_list(S), S =/= "" -> split_csv(S);
+        _Unset                      -> []
+    end.
 
 pool(Name) ->
     case provider_config(Name) of
@@ -222,15 +254,19 @@ send(Messages, Tools, [{Config, Key} | Rest], N) ->
             send(Messages, Tools, Rest, N + 1)
     end.
 
-once(#{fmt := openai, url := Url}, Body, Key) ->
+once(#{fmt := openai, url := Url} = Config, Body, Key) ->
     http_do({Url, [{"authorization", "Bearer " ++ Key}], "application/json", Body},
-            fun openai_parse/1);
-once(#{fmt := gemini, url := Url}, Body, Key) ->
+            timeout_of(Config), fun openai_parse/1);
+once(#{fmt := gemini, url := Url} = Config, Body, Key) ->
     http_do({Url, [{"x-goog-api-key", Key}], "application/json", Body},
-            fun gemini_parse/1).
+            timeout_of(Config), fun gemini_parse/1).
 
-http_do(Request, ParseFun) ->
-    case httpc:request(post, Request, http_opts(), [{body_format, binary}]) of
+%% Per-provider HTTP patience: a slow local engine (colibrì) declares its own
+%% long timeout; fast brokers keep the default.
+timeout_of(Config) -> maps:get(timeout, Config, ?TIMEOUT_MS).
+
+http_do(Request, Timeout, ParseFun) ->
+    case httpc:request(post, Request, http_opts(Timeout), [{body_format, binary}]) of
         {ok, {{_, 200, _}, _RH, Resp}}  -> ParseFun(Resp);
         {ok, {{_, Code, _}, _RH, Resp}} -> {error, {http, Code, snippet(Resp)}};
         {error, Reason}                 -> {error, Reason}
@@ -243,10 +279,10 @@ keys(#{keyenv := Env}) ->
         S     -> [K || Part <- string:tokens(S, ","), (K = string:trim(Part)) =/= ""]
     end.
 
-body(#{fmt := openai, model := Model}, Messages, Tools) ->
+body(#{fmt := openai, model := Model} = Config, Messages, Tools) ->
     jsx:encode(with_tools(#{<<"model">>       => Model,
                             <<"temperature">> => temperature(),
-                            <<"max_tokens">>  => ?MAX_TOKENS,
+                            <<"max_tokens">>  => maps:get(max_tokens, Config, ?MAX_TOKENS),
                             <<"messages">>    => Messages}, Tools));
 body(#{fmt := gemini}, Messages, Tools) ->
     gemini_body(Messages, Tools).
@@ -372,8 +408,8 @@ gemini_tokens(Json) ->
 %% Shared helpers
 %% ===================================================================
 
-http_opts() ->
-    [{timeout, ?TIMEOUT_MS}, {ssl, tls_opts()}].
+http_opts(Timeout) ->
+    [{timeout, Timeout}, {ssl, tls_opts()}].
 
 tls_opts() ->
     try
