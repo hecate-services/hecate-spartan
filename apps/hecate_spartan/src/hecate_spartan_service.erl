@@ -27,6 +27,9 @@ info() ->
     }.
 
 start(_Opts) ->
+    %% Clean slate before anything opens the data dir, if a new rebirth token is
+    %% set. Best-effort — a wipe failure must never block boot.
+    _ = catch maybe_rebirth:maybe_rebirth(),
     hecate_spartan_sup:start_link().
 
 stop(_State) ->
