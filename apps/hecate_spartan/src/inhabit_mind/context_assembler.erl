@@ -49,6 +49,7 @@
 -spec render(map()) -> [message()].
 render(#{soul := Soul} = Ctx) ->
     Trigger    = maps:get(trigger, Ctx, <<>>),
+    Signals    = maps:get(signals, Ctx, <<>>),
     Chronicle  = maps:get(chronicle, Ctx, []),
     Scratchpad = maps:get(scratchpad, Ctx, <<>>),
     Memories   = maps:get(memories, Ctx, []),
@@ -62,7 +63,16 @@ render(#{soul := Soul} = Ctx) ->
         ++ consolidated_band(Consolidated)
         ++ [sys(l4(Soul, Scratchpad, Memories, Hud))]
         ++ mission_reminder(Mission)
-        ++ [#{role => <<"user">>, content => Trigger}].
+        ++ [#{role => <<"user">>, content => trigger_with_signals(Signals, Trigger)}].
+
+%% The structured signal a sensor attached to this stimulus (topic, who reported
+%% it, where it is about) — a closed-vocabulary line the mind can reason and route
+%% on, distinct from the prose it reads. Rendered just above the trigger so it is
+%% the last framing before the mind answers. Empty for peer speech (no sensor).
+trigger_with_signals(<<>>, Trigger) ->
+    Trigger;
+trigger_with_signals(Signals, Trigger) ->
+    <<"SIGNAL: ", Signals/binary, "\n\n", Trigger/binary>>.
 
 %% The durable gist of a life: MSOs (meta-summaries) and CMOs (condensed
 %% experience), produced by the memory faculty's Sleep Cycle. Empty until the

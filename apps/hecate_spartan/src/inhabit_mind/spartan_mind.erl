@@ -26,6 +26,7 @@
 -export([start_link/1]).
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2, terminate/2]).
 -export([decide/5]).   %% the pre-LLM engagement gate, pure, exported for tests
+-export([news_signals/1]).   %% structured stimulus signal, pure, exported for tests
 
 %% A mind hears two things over the mesh: the broadcast channel (society-wide
 %% stimulus, e.g. a sentinel digest) and the agora (every mind's public speech).
@@ -138,7 +139,8 @@ handle_info({self_alert, Note}, #st{busy = true} = St) ->
     {noreply, St};
 handle_info({self_alert, Note}, St) ->
     Body = <<"[SELF-ALERT] you asked to be reminded: ", Note/binary>>,
-    {noreply, react({ok, Body}, St)};
+    %% A self-alert is the mind's own intent, not a sensed fact — no signal line.
+    {noreply, react({ok, Body}, #{}, St)};
 %% The reasoning process finished normally (it already reported via {reasoned} /
 %% {reasoning_failed}); nothing to do. An ABNORMAL death with `busy' still set is
 %% a crash that never reported — clear busy so the mind does not go deaf forever.
@@ -208,24 +210,60 @@ retry(St) ->
 maybe_react(_Payload, #st{busy = true} = St) ->
     St;
 maybe_react(Payload, St) when is_map(Payload) ->
-    react(stimulus(Payload, St), St);
+    react(stimulus(Payload, St), Payload, St);
 maybe_react(_Payload, St) ->
     St.
 
-react({ok, Message}, St) ->
+react({ok, Message}, Fact, St) ->
     Self = self(),
     %% Defuse the stimulus (poison-pill) before it enters context: peers and the
     %% world feed are untrusted. The raw Message is still carried to the reasoned
     %% handler, so the mind REMEMBERS what it actually heard, not the envelope.
-    Messages = build_context(defuse:defuse(Message), St),
+    %% The signal line is the sensor's structured metadata (closed vocabulary),
+    %% carried alongside so the mind reasons on WHAT/WHERE/WHO, not prose alone.
+    Messages = build_context(defuse:defuse(Message), news_signals(Fact), St),
     Tools = mind_tools:manifest(),
     %% spawn_MONITOR, not spawn: if the reasoning process dies abnormally without
     %% reporting (a crash the inner catches miss), the DOWN handler clears `busy',
     %% so the mind can never wedge deaf-and-busy-forever.
     _ = spawn_monitor(fun() -> run_reasoning(Self, Message, Messages, Tools) end),
     St#st{busy = true, last_reasoned = erlang:system_time(millisecond)};
-react(skip, St) ->
+react(skip, _Fact, St) ->
     St.
+
+%% The structured signal a sensor attached to a fact: topic class, who reported it
+%% (country + source type), where it is about. A closed-vocabulary line the mind
+%% reasons and routes on. Empty for peer speech (agora/broadcast carry no sensor
+%% metadata). Sanitized as defence in depth even though the vocabulary is ours.
+news_signals(Fact) when is_map(Fact) ->
+    Parts = [topic_sig(mget(topic_class, Fact, <<>>)),
+             reporter_sig(mget(reporting_country_name, Fact, <<>>),
+                          mget(source_type, Fact, <<>>)),
+             subject_sig(mget(subject_country_name, Fact, <<>>))],
+    join_signals([P || P <- Parts, P =/= <<>>]);
+news_signals(_NotMap) ->
+    <<>>.
+
+topic_sig(<<>>)        -> <<>>;
+topic_sig(<<"general">>) -> <<>>;
+topic_sig(Class)       -> Class.
+
+reporter_sig(<<>>, _Type) -> <<>>;
+reporter_sig(Name, <<>>)  -> <<"reported by ", Name/binary>>;
+reporter_sig(Name, Type)  -> <<"reported by ", Name/binary, " (", Type/binary, ")">>.
+
+subject_sig(<<>>) -> <<>>;
+subject_sig(Name) -> <<"about ", Name/binary>>.
+
+join_signals([]) ->
+    <<>>;
+join_signals(Parts) ->
+    defuse:sanitize(clip_sig(iolist_to_binary(lists:join(<<" · "/utf8>>, Parts)))).
+
+clip_sig(Bin) -> clip_sig(Bin, string:length(Bin)).
+
+clip_sig(Bin, Len) when Len =< 200 -> Bin;
+clip_sig(Bin, _Len)                -> string:slice(Bin, 0, 200).
 
 run_reasoning(Self, Message, Messages, Tools) ->
     timer:sleep(rand:uniform(?STAGGER_MS)),
@@ -274,12 +312,13 @@ parse_cooldown(S) ->
 
 %% --- the 4-layer context ---
 
-build_context(Message, #st{did = Did, identity = Id, memory = Mem} = St) ->
+build_context(Message, Signals, #st{did = Did, identity = Id, memory = Mem} = St) ->
     SoulMap = soul:render(Did, Id),
     Recent  = memory:recent_stm(Did, ?STM_SHOW),
     context_assembler:render(#{
         soul       => SoulMap,
         trigger    => Message,
+        signals    => Signals,
         chronicle  => Recent,
         scratchpad => St#st.scratchpad,
         consolidated => memory:consolidated(Did),
@@ -548,5 +587,10 @@ genesis_version() ->
     end.
 
 mget(AtomKey, Map) ->
+    mget(AtomKey, Map, undefined).
+
+%% A fact crosses the mesh as CBOR, so a key may arrive as an atom or a binary;
+%% try both before the default.
+mget(AtomKey, Map, Default) ->
     maps:get(AtomKey, Map,
-             maps:get(atom_to_binary(AtomKey, utf8), Map, undefined)).
+             maps:get(atom_to_binary(AtomKey, utf8), Map, Default)).

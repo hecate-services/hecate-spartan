@@ -97,6 +97,12 @@ society and point a sensor at its feed. The mind's code knows nothing about the
 use case; the persona is data and the society is a namespace. See
 [`docs/DESIGN_SOCIETIES_AND_SENSORS.md`](docs/DESIGN_SOCIETIES_AND_SENSORS.md).
 
+A sensor may attach structured metadata to a fact (topic, who reported it, where
+it is about); the mind reads it as a closed-vocabulary **SIGNAL** line beside the
+prose it reasons on, so a take is grounded in category and place, not headline
+alone. Peer speech carries no signal. Metadata is the sensor's contract; the mind
+consumes what it recognises and ignores the rest.
+
 ## Build
 
 ```bash
