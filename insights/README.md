@@ -20,6 +20,8 @@ explained plainly, we do not understand it well enough yet.
 |---|------|---------------------|
 | [001](001_society_of_minds_is_not_n_chatbots.md) | A society of minds is not N chatbots | Why does the N-LLM agora converge to bland consensus, and what would make a collective more than the sum? |
 | [002](002_what_backend_what_sensor.md) | What backend, what sensor? | What does an LLM actually bring as a Spartan engine, could an *evolvable* backend embody the thesis better, and do we need *numerical* sensors to make anything falsifiable? |
+| [003](003_metric_and_kill_threshold.md) | The metric and the kill threshold | How do we judge whether the kernel earns its keep, with a number written down before we build, so this can't become endless reframing? |
+| [004](004_engine_agnostic_kernel_contract.md) | The engine-agnostic kernel contract | What do "memory", "self-audit", "authorship", "continuity" mean when the engine is a net, not an LLM — and what honestly cannot port? |
 
 ## The one line, so far
 
