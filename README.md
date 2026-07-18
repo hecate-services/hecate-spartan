@@ -180,11 +180,13 @@ his deeper *cognition* as well:
   re-ranks. Auto-injected against every stimulus. **Durable:** the store persists
   to disk (text + vectors + links, atomic write) and loads whole on restart, so a
   reboot neither re-embeds nor forgets — a persistent whole-life index, not a
-  process-lifetime cache (only a brand-new mind seeds from recent STM). **Honest
-  limit (vs Gene's LTM):** the linking is cosine nearest-neighbour, not his
-  LLM-driven A-Mem linking (the Sleep-Cycle seat for that exists but is unused).
-  The on-disk term file suits the low-thousands of memories; past that it moves to
-  hecate-vector or an embedded KV.
+  process-lifetime cache (only a brand-new mind seeds from recent STM).
+  **Agentic linking:** links start as cosine nearest-neighbour (immediate), then
+  on the sleep cadence the LLM re-links one memory from its candidates — Gene's
+  LLM-driven A-Mem linking, reciprocal — one small call per consolidation window,
+  never one per turn, and a no-op when no backend answers. **Honest limit:** the
+  on-disk term file suits the low-thousands of memories; past that it moves to
+  hecate-vector or an embedded KV — a scale step, not a cognition gap.
 - **Self-alerts** — the token-clock scheduler: a mind reminds itself after N
   tokens of thought; reminders survive restarts.
 - **The full nine-archive Soul** — charter, lessons, philosophy, journal, ideas,

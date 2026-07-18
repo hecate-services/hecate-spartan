@@ -58,6 +58,9 @@
 %% nearest in meaning to the stimulus into the mind's context.
 -define(MEMORY_SEED_CAP, 200).
 -define(RECALL_K, 2).
+%% Re-link one memory via the LLM every this-many remembered turns (~one sleep
+%% consolidation window), so agentic linking costs one small call, not one/turn.
+-define(EVOLVE_EVERY, 8).
 
 -record(st, {name            :: binary(),
              did             :: binary(),
@@ -73,6 +76,7 @@
              locale     :: binary() | undefined,
              subs = []  :: [reference()],
              memory       :: mind_memory:mem() | undefined,
+             since_evolve = 0 :: non_neg_integer(),
              alerts = []  :: [self_alerts:alert()],
              busy = false :: boolean()}).
 
@@ -406,12 +410,31 @@ schedule_alert(#{after_tokens := After, note := Note}, #st{did = Did} = St) ->
 %% a faculty rather than an event stream.
 remember_turn(Heard, Thought, _ToolCalls, Tokens, St) ->
     _ = observe_memory(St#st.did, Heard, Thought),
-    Mem = remember_turn_in_memory(St#st.memory, Heard, Thought),
+    Mem0 = remember_turn_in_memory(St#st.memory, Heard, Thought),
+    N = St#st.since_evolve + 1,
+    {Mem, Since} = maybe_evolve(N >= ?EVOLVE_EVERY, N, Mem0),
     _ = persist_ltm(Mem),
     St1 = St#st{tokens_used = St#st.tokens_used + Tokens,
                 last_tokens = Tokens,
+                since_evolve = Since,
                 memory = Mem},
     fire_self_alerts(St1).
+
+%% Cadenced A-Mem evolution: every ?EVOLVE_EVERY remembered turns the LLM re-links
+%% one memory (Gene's agentic linking). Off the per-turn cost path — one small
+%% call per consolidation window. The counter resets only when it actually runs.
+maybe_evolve(false, N, Mem) ->
+    {Mem, N};
+maybe_evolve(true, _N, Mem) ->
+    {evolve_memory(Mem), 0}.
+
+evolve_memory(undefined) -> undefined;
+evolve_memory(Mem)       -> mind_memory:evolve(Mem, fun evolve_reason/1).
+
+evolve_reason(Msgs) -> ok_reply(catch spartan_mind_llm:reason_messages(Msgs)).
+
+ok_reply({ok, Text}) when is_binary(Text) -> {ok, Text};
+ok_reply(_Other)                          -> error.
 
 %% Persist the long-term store after a turn so it survives a restart (best-
 %% effort; an ephemeral store is a no-op). Whole-file rewrite — fine to the

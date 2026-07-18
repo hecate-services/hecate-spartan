@@ -84,3 +84,62 @@ tmp_dir() ->
     Rand = integer_to_binary(erlang:unique_integer([positive])),
     Dir = filename:join(["/tmp", <<"mind_memory_test_", Rand/binary>>]),
     iolist_to_binary(Dir).
+
+%% --- A-Mem evolution (LLM-driven agentic linking) ---
+%% evolve/2 uses only cosine (pure) + the caller's ReasonFun, no embedder, so
+%% these build a mem() with hand-set vectors and a stub ReasonFun directly.
+
+evolve_test_() ->
+    [
+     fun evolve_links_via_llm_choice/0,
+     fun evolve_none_reply_links_nothing/0,
+     fun evolve_backend_down_leaves_unevolved/0,
+     fun evolve_marks_no_candidates/0,
+     fun evolve_empty_is_safe/0
+    ].
+
+%% a≈b (cosine ~0.99), c orthogonal (below the candidate floor). Lowest id "a" is
+%% evolved first; only b is a candidate; the stub links it; b gains a back-link.
+evolve_links_via_llm_choice() ->
+    Mem1 = mind_memory:evolve(mem3(), fun(_Msgs) -> {ok, <<"1">>} end),
+    A = entry(<<"a">>, Mem1),
+    B = entry(<<"b">>, Mem1),
+    ?assertEqual(true, maps:get(evolved, A)),
+    ?assertEqual([<<"b">>], maps:get(links, A)),
+    ?assert(lists:member(<<"a">>, maps:get(links, B))).
+
+evolve_none_reply_links_nothing() ->
+    Mem1 = mind_memory:evolve(mem3(), fun(_Msgs) -> {ok, <<"NONE">>} end),
+    A = entry(<<"a">>, Mem1),
+    ?assertEqual(true, maps:get(evolved, A)),
+    ?assertEqual([], maps:get(links, A)).
+
+%% Backend down: the memory stays unevolved (retried next cadence), links intact.
+evolve_backend_down_leaves_unevolved() ->
+    Mem1 = mind_memory:evolve(mem3(), fun(_Msgs) -> error end),
+    A = entry(<<"a">>, Mem1),
+    ?assertEqual(false, maps:get(evolved, A)),
+    ?assertEqual([], maps:get(links, A)).
+
+%% A lone vectored memory has no candidates: marked evolved so it is not
+%% reconsidered every cadence forever.
+evolve_marks_no_candidates() ->
+    Solo = #{did => <<"did:test:solo">>, dir => undefined,
+             entries => #{<<"a">> => ventry(<<"a">>, <<"x">>, [1.0, 0.0])}},
+    Mem1 = mind_memory:evolve(Solo, fun(_Msgs) -> {ok, <<"1">>} end),
+    ?assertEqual(true, maps:get(evolved, entry(<<"a">>, Mem1))).
+
+evolve_empty_is_safe() ->
+    {ok, M0} = mind_memory:open(<<"did:test:evolve-empty">>),
+    ?assertEqual(M0, mind_memory:evolve(M0, fun(_Msgs) -> {ok, <<"1">>} end)).
+
+mem3() ->
+    #{did => <<"did:test:evolve">>, dir => undefined,
+      entries => #{<<"a">> => ventry(<<"a">>, <<"alpha">>, [1.0, 0.0]),
+                   <<"b">> => ventry(<<"b">>, <<"beta">>,  [0.9, 0.1]),
+                   <<"c">> => ventry(<<"c">>, <<"gamma">>, [0.0, 1.0])}}.
+
+ventry(Id, Text, Vec) ->
+    #{id => Id, text => Text, tokens => [], vec => Vec, links => [], evolved => false}.
+
+entry(Id, #{entries := Es}) -> maps:get(Id, Es).
