@@ -36,7 +36,7 @@
 %% (empty directive clears that domain). This is how the society's work is
 %% injected at runtime, from an operator or a use-case service.
 -define(RESUB_MS, 5000).
--define(STM_SHOW, 8).
+-define(STM_SHOW, 5).
 
 %% A mind reasons at most once per cooldown, so a lively square cannot spiral
 %% into a token-burn loop. Env-driven per node (HECATE_MIND_COOLDOWN_MS), else
@@ -53,7 +53,7 @@
 %% the mind's most recent past turns; on each turn, recall this many memories
 %% nearest in meaning to the stimulus into the mind's context.
 -define(MEMORY_SEED_CAP, 200).
--define(RECALL_K, 3).
+-define(RECALL_K, 2).
 
 -record(st, {name            :: binary(),
              did             :: binary(),

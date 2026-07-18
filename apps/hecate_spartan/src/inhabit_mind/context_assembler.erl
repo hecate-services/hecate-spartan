@@ -77,7 +77,14 @@ consolidated_band(_None) ->
 %% Defence in depth: a consolidated band carries at most this many gists, so a
 %% runaway memory tier can never balloon the context every turn pays for. The
 %% Sleep Cycle already caps each gist's size and trims the MSO tier.
--define(GIST_MAX, 8).
+-define(GIST_MAX, 3).
+
+%% Per-blob byte budgets for the unbounded Soul-archive Markdown (L2). Keep
+%% identity (charter) fullest; trim the accreting logs (lessons, journal) hardest.
+-define(BRIEF_MAX, 1200).
+-define(CHARTER_MAX, 2000).
+-define(LESSONS_MAX, 1500).
+-define(JOURNAL_MAX, 1000).
 
 gist_block(_Title, [])    -> [];
 gist_block(Title, Items) ->
@@ -125,18 +132,22 @@ l2(Soul) ->
     ]).
 
 brief_block(<<>>) -> [];
-brief_block(Brief) -> ["\nWhy you exist:\n", Brief, "\n"].
+brief_block(Brief) -> ["\nWhy you exist:\n", clip_head(Brief, ?BRIEF_MAX), "\n"].
 
 %% Charter, lessons, and journal are Markdown blobs, each owned by its own
-%% area-of-consciousness process (soul_area); include them as the mind wrote them.
+%% area-of-consciousness process (soul_area). They grow without bound as a mind
+%% amends its charter and records lessons, and every reasoning turn pays for the
+%% whole blob — the main driver of context bloat past the cheap providers' TPM
+%% limits. Bound each: keep the charter's head (its constitution leads), and the
+%% tail of lessons + journal (the recent ones matter most).
 charter_block(<<>>) -> [];
-charter_block(Md)   -> ["\nYour charter:\n", Md, "\n"].
+charter_block(Md)   -> ["\nYour charter:\n", clip_head(Md, ?CHARTER_MAX), "\n"].
 
 lessons_block(<<>>) -> [];
-lessons_block(Md)   -> ["\nLessons you have learned:\n", Md, "\n"].
+lessons_block(Md)   -> ["\nLessons you have learned:\n", clip_tail(Md, ?LESSONS_MAX), "\n"].
 
 journal_block(<<>>) -> [];
-journal_block(Md)   -> ["\nYour cognitive journal:\n", Md, "\n"].
+journal_block(Md)   -> ["\nYour cognitive journal:\n", clip_tail(Md, ?JOURNAL_MAX), "\n"].
 
 %% ===================================================================
 %% L3 — the recent-history window (STM, from the memory faculty)
@@ -180,3 +191,19 @@ sys(Content) -> #{role => <<"system">>, content => Content}.
 %% atom keys by the mind. Accept binary keys too, defensively.
 mget(Key, Map, Default) when is_atom(Key) ->
     maps:get(Key, Map, maps:get(atom_to_binary(Key, utf8), Map, Default)).
+
+%% Bound a Markdown blob to Max graphemes (never mid-character). clip_head keeps
+%% the beginning (charter/brief lead with what matters); clip_tail keeps the end
+%% (recent lessons/journal entries). A trimmed blob says so, so a mind knows its
+%% own record was elided rather than lost.
+clip_head(Bin, Max) when is_binary(Bin) ->
+    head(Bin, string:length(Bin), Max).
+
+head(Bin, Len, Max) when Len =< Max -> Bin;
+head(Bin, _Len, Max) -> <<(string:slice(Bin, 0, Max))/binary, "\n…[trimmed]"/utf8>>.
+
+clip_tail(Bin, Max) when is_binary(Bin) ->
+    tail(Bin, string:length(Bin), Max).
+
+tail(Bin, Len, Max) when Len =< Max -> Bin;
+tail(Bin, Len, Max) -> <<"…[earlier trimmed]\n"/utf8, (string:slice(Bin, Len - Max, Max))/binary>>.
