@@ -26,6 +26,13 @@
 -define(STM_KEEP, 2).
 -define(CMO_FULL, 6).
 -define(CMO_KEEP, 2).
+%% A CMO/MSO is a GIST, not an archive. Cap it hard (grapheme-safe): a failed
+%% reflection falls back to the raw join, which — compounded up the tiers and
+%% never trimmed — ballooned a mind's context to ~70k tokens (every future turn
+%% carried it). Cap the gist, and bound the MSO tier so meta-summaries don't
+%% accumulate forever.
+-define(REFLECT_MAX_CHARS, 800).
+-define(MSO_KEEP, 4).
 
 -spec start_link(map()) -> {ok, pid()} | {error, term()}.
 start_link(#{did := Did} = Spec) ->
@@ -68,19 +75,29 @@ cmo_step(false, _Did, _Cmos) ->
 cmo_step(true, Did, Cmos) ->
     Entries = memory_store:all(Cmos),
     Mso = reflect(<<"condensed memories">>, texts(Entries)),
-    memory_store:add(memory:store_name(Did, mso), entry(Mso)),
+    Msos = memory:store_name(Did, mso),
+    memory_store:add(Msos, entry(Mso)),
+    memory_store:trim(Msos, ?MSO_KEEP),
     memory_store:trim(Cmos, ?CMO_KEEP).
 
 %% Reflect a set of texts into one insight. Abstractive via the LLM; a
 %% deterministic join if no backend answers, so the tier still advances.
 reflect(Kind, Texts) ->
     Joined = join(Texts),
-    from_llm(catch spartan_mind_llm:reason_messages(prompt(Kind, Joined)), Joined).
+    cap(from_llm(catch spartan_mind_llm:reason_messages(prompt(Kind, Joined)), Joined)).
 
 from_llm({ok, Text}, _Joined) when is_binary(Text), Text =/= <<>> ->
     Text;
 from_llm(_Failed, Joined) ->
     <<"(unreflected) ", Joined/binary>>.
+
+%% A gist must SHRINK. Cap it (grapheme-safe) so a failed reflection's raw join —
+%% or a runaway model — cannot bloat the tier that every future turn carries.
+cap(Text) when is_binary(Text) ->
+    case string:length(Text) > ?REFLECT_MAX_CHARS of
+        true  -> unicode:characters_to_binary([string:slice(Text, 0, ?REFLECT_MAX_CHARS), "…"]);
+        false -> Text
+    end.
 
 prompt(Kind, Joined) ->
     [#{role => <<"system">>,

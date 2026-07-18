@@ -15,6 +15,7 @@ faculty_test_() ->
       fun sleep_cycle_condenses_stm_to_cmo/1,
       fun cmos_meta_summarize_to_mso/1,
       fun consolidated_returns_texts/1,
+      fun a_gist_stays_bounded/1,
       fun store_self_heals_from_disk/1]}.
 
 %% A fresh on-disk root per test. `unique_integer' restarts each VM, so these
@@ -55,6 +56,22 @@ sleep_cycle_condenses_stm_to_cmo(Dir) ->
                                  andalso count(Did, stm) =< 3 end, 200),
         ?assert(count(Did, cmo) >= 1),
         ?assert(count(Did, stm) =< 3)
+    end.
+
+%% Regression: a failed reflection (no backend, as in this test env) once dumped
+%% the full concatenation, compounding up the tiers into a ~70k-token context. A
+%% gist must SHRINK — even from big raw input it stays bounded.
+a_gist_stays_bounded(Dir) ->
+    fun() ->
+        Did = fresh(Dir),
+        Big = binary:copy(<<"x">>, 600),
+        [ok = memory:observe(Did, <<Big/binary, (integer_to_binary(I))/binary>>)
+         || I <- lists:seq(1, 8)],
+        ok = wait_until(fun() -> count(Did, cmo) >= 1
+                                 andalso count(Did, stm) =< 3 end, 200),
+        [Cmo | _] = memory_store:all(memory:store_name(Did, cmo)),
+        %% 8 * ~600 chars joined would be ~4800; the cap keeps it a gist.
+        ?assert(string:length(maps:get(text, Cmo)) =< 810)
     end.
 
 cmos_meta_summarize_to_mso(Dir) ->

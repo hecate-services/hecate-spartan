@@ -74,8 +74,14 @@ consolidated_band(#{cmos := Cmos, msos := Msos}) when Cmos =/= []; Msos =/= [] -
 consolidated_band(_None) ->
     [].
 
+%% Defence in depth: a consolidated band carries at most this many gists, so a
+%% runaway memory tier can never balloon the context every turn pays for. The
+%% Sleep Cycle already caps each gist's size and trims the MSO tier.
+-define(GIST_MAX, 8).
+
 gist_block(_Title, [])    -> [];
-gist_block(Title, Items) -> ["\n", Title, ":\n", [["- ", I, "\n"] || I <- Items]].
+gist_block(Title, Items) ->
+    ["\n", Title, ":\n", [["- ", I, "\n"] || I <- lists:sublist(Items, ?GIST_MAX)]].
 
 %% The society's work, distinct from a mind's identity. Deployment data (this
 %% deployment's use cases), rendered fresh each turn between the genesis core
