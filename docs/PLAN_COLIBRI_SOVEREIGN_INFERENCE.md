@@ -139,6 +139,30 @@ model won't fit on its SSD — it would stream from a HDD at ~0.01 tok/s, unusab
 Keep msi00 as the edge device. Experiment on the dev box; serve from a dedicated
 NVMe box.
 
+## Networking: LAN-direct now, mesh (hecate-llm) later
+
+The minds reach a provider over HTTP (`httpc`), so the transport question is real.
+
+- **Experiment (now): LAN-direct — no mesh needed.** The dev box is dual-homed
+  and sits on the beam LAN as **192.168.1.100** (enp4s0, same /24 as
+  beam00–03). Verified: beam00 → 192.168.1.100 is 0% loss, 0.33 ms, ports open.
+  The beam containers run `--network host`, so they share the host's LAN address
+  and reach it directly. Set `COLIBRI_URL=http://192.168.1.100:8000/v1/chat/completions`
+  on the minds. This uses the scaffolded `colibri` clause as-is (openai/httpc).
+  Caveats: hardcodes a LAN IP; only works while the dev box is up on that LAN.
+  Fine for judging quality/latency, which is transport-independent.
+
+- **Production: over mesh via `hecate-llm`.** That service already exists
+  (`hecate-services/hecate-llm`): a realm-bound gateway that advertises
+  `hecate-llm.chat` over macula RPC, with an `openai_provider` that takes a
+  `base_url` — so colibrì slots in as `base_url = http://<colibri-box>:8000`
+  (or a thin `colibri_provider`). Minds then reach it by mesh RPC regardless of
+  where the box sits (dedicated box, behind NAT, anywhere on the mesh) — no LAN
+  IP, no keys in the mind. Cost: a `mesh` transport clause in `spartan_mind_llm`
+  (call `macula:call("hecate-llm.chat", …)` instead of `httpc`) + deploying
+  hecate-llm pointed at colibrì. Do this once colibrì proves out and moves to the
+  dedicated box; the LAN-direct experiment does not need it.
+
 ## Open decisions (for discussion)
 1. Primary vs fallback: is a ~1–3 min reply acceptable as the society's *normal*
    cadence, or is colibrì only the always-available floor under the free tiers?
