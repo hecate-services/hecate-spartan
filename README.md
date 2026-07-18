@@ -177,12 +177,14 @@ his deeper *cognition* as well:
 - **A-Mem long-term memory** — a linked, semantic store: memories embed
   (mesh-first via `io.hecate.embed`, then local Ollama, then lexical fallback),
   link to their nearest neighbours, and recall follows those links one hop and
-  re-ranks. Auto-injected against every stimulus. **Honest limits (vs Gene's
-  LTM):** the linking is cosine nearest-neighbour, not his LLM-driven A-Mem
-  linking (the Sleep-Cycle seat for that exists but is unused); and the store is
-  currently in-process, reseeded from recent STM on restart rather than a durable
-  whole-life index — so it is targeted recent recall, not yet a persistent
-  life-long memory. Both are deliberate next steps, not "done".
+  re-ranks. Auto-injected against every stimulus. **Durable:** the store persists
+  to disk (text + vectors + links, atomic write) and loads whole on restart, so a
+  reboot neither re-embeds nor forgets — a persistent whole-life index, not a
+  process-lifetime cache (only a brand-new mind seeds from recent STM). **Honest
+  limit (vs Gene's LTM):** the linking is cosine nearest-neighbour, not his
+  LLM-driven A-Mem linking (the Sleep-Cycle seat for that exists but is unused).
+  The on-disk term file suits the low-thousands of memories; past that it moves to
+  hecate-vector or an embedded KV.
 - **Self-alerts** — the token-clock scheduler: a mind reminds itself after N
   tokens of thought; reminders survive restarts.
 - **The full nine-archive Soul** — charter, lessons, philosophy, journal, ideas,
