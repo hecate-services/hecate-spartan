@@ -108,6 +108,7 @@ handle_info(setup_memory, St) ->
 %% long-term memory in. Turns remembered during the brief seed window are in the
 %% now-replaced empty store; at boot that is at most a turn or two, acceptable.
 handle_info({memory_ready, Mem}, #st{name = Name} = St) ->
+    _ = catch mind_memory:save(Mem),   %% persist the initial seed
     logger:info("[spartan_mind] ~ts memory ready (~b recalled)",
                 [Name, mind_memory:size(Mem)]),
     {noreply, St#st{memory = Mem}};
@@ -405,10 +406,18 @@ schedule_alert(#{after_tokens := After, note := Note}, #st{did = Did} = St) ->
 %% a faculty rather than an event stream.
 remember_turn(Heard, Thought, _ToolCalls, Tokens, St) ->
     _ = observe_memory(St#st.did, Heard, Thought),
+    Mem = remember_turn_in_memory(St#st.memory, Heard, Thought),
+    _ = persist_ltm(Mem),
     St1 = St#st{tokens_used = St#st.tokens_used + Tokens,
                 last_tokens = Tokens,
-                memory = remember_turn_in_memory(St#st.memory, Heard, Thought)},
+                memory = Mem},
     fire_self_alerts(St1).
+
+%% Persist the long-term store after a turn so it survives a restart (best-
+%% effort; an ephemeral store is a no-op). Whole-file rewrite — fine to the
+%% low-thousands of memories; past that, move to hecate-vector or an embedded KV.
+persist_ltm(undefined) -> ok;
+persist_ltm(Mem)       -> catch mind_memory:save(Mem).
 
 %% The token clock advanced this turn; fire any self-alert whose budget it has
 %% now reached. Each fires as a stimulus (a self-message) the mind reasons about;
@@ -444,14 +453,22 @@ remember_turn_in_memory(Mem, Heard, Thought)         -> mind_memory:remember(Mem
 %% STM, so a reboot does not give the mind amnesia: what it lived through before
 %% is recallable again. Best-effort; a mind without it just recalls nothing.
 setup_memory(#st{did = Did} = St) ->
-    {ok, Mem0} = mind_memory:open(Did),
-    %% Seeding embeds up to ?MEMORY_SEED_CAP past turns, which is I/O per entry —
-    %% do it OFF this process so the mind is usable at once (it just recalls
-    %% nothing until the seeded memory swaps in). The empty store is live now.
+    DataDir = iolist_to_binary(hecate_spartan_service:data_dir()),
+    {ok, Mem0} = mind_memory:open(Did, DataDir),
+    maybe_seed(mind_memory:size(Mem0), Mem0, Did),
+    St#st{memory = Mem0}.
+
+%% A persisted store loads whole (text + vectors + links), so a restart neither
+%% re-embeds nor forgets — the durability the review flagged. Only a brand-new
+%% mind (empty store) is seeded from recent STM, and that embedding runs OFF this
+%% process so boot is never blocked (the empty store is live meanwhile).
+maybe_seed(0, Mem0, Did) ->
     Self = self(),
     Seed = memory:recent_stm(Did, ?MEMORY_SEED_CAP),
     _ = spawn(fun() -> Self ! {memory_ready, mind_memory:seed(Mem0, Seed)} end),
-    St#st{memory = Mem0}.
+    ok;
+maybe_seed(_Loaded, _Mem0, _Did) ->
+    ok.
 
 %% One memory string per turn: the stimulus and the mind's own reading of it, so
 %% recall on a similar stimulus later surfaces how the mind thought last time.

@@ -26,7 +26,9 @@ memory_test_() ->
       fun recall_returns_stored_texts/0,
       fun recall_is_capped_and_deterministic/0,
       fun recall_on_empty_is_safe/0,
-      fun bad_input_never_crashes/0
+      fun bad_input_never_crashes/0,
+      fun persists_across_reopen/0,
+      fun ephemeral_open_saves_nothing/0
      ]}.
 
 stores_and_grows() ->
@@ -59,3 +61,26 @@ bad_input_never_crashes() ->
     {ok, M0} = mind_memory:open(<<"did:test:bad">>),
     ?assertEqual(M0, mind_memory:remember(M0, <<>>)),
     ?assertEqual([], mind_memory:recall(M0, <<>>, 3)).
+
+%% Durability: seed, save, re-open a FRESH handle from the same dir — the store
+%% loads whole from disk (no re-embed), size and recall survive the restart.
+persists_across_reopen() ->
+    Dir = tmp_dir(),
+    Did = <<"did:test:persist">>,
+    {ok, M0} = mind_memory:open(Did, Dir),
+    M1 = mind_memory:seed(M0, ?CORPUS),
+    ok = mind_memory:save(M1),
+    {ok, M2} = mind_memory:open(Did, Dir),
+    ?assertEqual(length(?CORPUS), mind_memory:size(M2)),
+    ?assert(mind_memory:recall(M2, <<"rotate the leaked credential immediately">>, 2) =/= []).
+
+%% An ephemeral store (open/1, no data dir) persists nothing and never crashes.
+ephemeral_open_saves_nothing() ->
+    {ok, M0} = mind_memory:open(<<"did:test:ephemeral">>),
+    M1 = mind_memory:remember(M0, <<"a fleeting thought">>),
+    ?assertEqual(ok, mind_memory:save(M1)).
+
+tmp_dir() ->
+    Rand = integer_to_binary(erlang:unique_integer([positive])),
+    Dir = filename:join(["/tmp", <<"mind_memory_test_", Rand/binary>>]),
+    iolist_to_binary(Dir).

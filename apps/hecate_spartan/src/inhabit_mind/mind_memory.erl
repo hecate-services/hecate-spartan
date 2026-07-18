@@ -16,7 +16,7 @@
 %%% the relevant past without having to ask. All pure + best-effort.
 -module(mind_memory).
 
--export([open/1, remember/2, recall/3, seed/2, size/1]).
+-export([open/1, open/2, remember/2, recall/3, seed/2, size/1, save/1]).
 
 %% A new memory links to at most this many nearest neighbours, each above the
 %% similarity threshold; recall follows those links one hop out from a seed hit.
@@ -25,12 +25,50 @@
 
 -type entry() :: #{id := binary(), text := binary(), tokens := [binary()],
                    vec := [float()] | undefined, links := [binary()]}.
--type mem() :: #{did := binary(), entries := #{binary() => entry()}}.
+-type mem() :: #{did := binary(), dir := binary() | undefined,
+                 entries := #{binary() => entry()}}.
 -export_type([mem/0]).
 
+%% In-memory only (ephemeral / tests): no data dir, save/1 is a no-op.
 -spec open(binary()) -> {ok, mem()}.
 open(Did) when is_binary(Did) ->
-    {ok, #{did => Did, entries => #{}}}.
+    open(Did, undefined).
+
+%% Durable: load the persisted store from disk (whole life, with vectors and
+%% links, so a restart does NOT re-embed) and remember its data dir so save/1 can
+%% write it back. A brand-new mind loads an empty store and is seeded from STM.
+-spec open(binary(), binary() | undefined) -> {ok, mem()}.
+open(Did, undefined) when is_binary(Did) ->
+    {ok, #{did => Did, dir => undefined, entries => #{}}};
+open(Did, DataDir) when is_binary(Did), is_binary(DataDir) ->
+    {ok, #{did => Did, dir => DataDir, entries => load(path(DataDir, Did))}}.
+
+%% @doc Persist the store atomically (tmp + rename), like the memory_store tiers.
+%% Best-effort: an ephemeral (dir=undefined) store persists nothing.
+-spec save(mem()) -> ok.
+save(#{dir := undefined}) ->
+    ok;
+save(#{dir := DataDir, did := Did, entries := Es}) ->
+    Path = path(DataDir, Did),
+    ok = filelib:ensure_dir(Path),
+    Tmp = <<Path/binary, ".tmp">>,
+    ok = file:write_file(Tmp, term_to_binary(Es)),
+    file:rename(Tmp, Path).
+
+load(Path) ->
+    interpret_load(file:read_file(Path)).
+
+interpret_load({ok, Bin}) ->
+    safe_terms(catch binary_to_term(Bin));
+interpret_load(_Absent) ->
+    #{}.
+
+safe_terms(Es) when is_map(Es) -> Es;
+safe_terms(_Corrupt)          -> #{}.
+
+path(DataDir, Did) ->
+    Id = binary:encode_hex(binary:part(crypto:hash(sha256, Did), 0, 16), lowercase),
+    iolist_to_binary(filename:join([DataDir, <<"ltm">>, <<Id/binary, ".term">>])).
 
 -spec remember(mem(), binary()) -> mem().
 remember(#{entries := Es} = Mem, Text) when is_binary(Text), Text =/= <<>> ->
