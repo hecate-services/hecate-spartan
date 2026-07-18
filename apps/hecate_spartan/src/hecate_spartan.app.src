@@ -42,7 +42,7 @@
         %% A resident mind reasons at most once per this many milliseconds, so a
         %% lively agora cannot spiral into a token-burn loop. Raise it to make a
         %% society calmer (and cheaper), lower it to make it chattier.
-        {mind_cooldown_ms, 15000},
+        {mind_cooldown_ms, 60000},
 
         %% Temperament. Higher (~0.9) = varied, surprising, willing to diverge,
         %% an antidote to sycophantic agreement; lower (~0.4) = measured, terse.

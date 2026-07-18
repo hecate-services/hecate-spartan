@@ -53,6 +53,20 @@ colibri_rides_the_carousel_test() ->
         ?assertEqual(<<"colibri,melious">>, spartan_mind_llm:provider_labels())
     end).
 
+%% The melious model is env-driven so a reasoning model can be swapped for a
+%% cheaper instruct one without a rebuild.
+melious_model_env_overrides_test() ->
+    with_env("MELIOUS_MODEL", "some-instruct-model", fun() ->
+        ?assertEqual(<<"some-instruct-model">>,
+                     maps:get(model, spartan_mind_llm:provider_config("melious")))
+    end).
+
+melious_model_defaults_when_unset_test() ->
+    with_unset("MELIOUS_MODEL", fun() ->
+        ?assertEqual(<<"qwen3.5-9b">>,
+                     maps:get(model, spartan_mind_llm:provider_config("melious")))
+    end).
+
 %% --- env fixtures (restore whatever was there) ---
 
 with_env(Var, Value, Fun) ->

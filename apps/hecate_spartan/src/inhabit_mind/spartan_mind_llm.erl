@@ -32,7 +32,12 @@
 -export([provider_labels/0, provider_config/1]).
 
 -define(MELIOUS_URL, "https://api.melious.ai/v1/chat/completions").
--define(MELIOUS_MODEL, <<"qwen3.5-9b">>).
+%% Env-driven (HECATE-side MELIOUS_MODEL) so the melious model can be A/B'd
+%% without a rebuild. The default qwen3.5-9b is a REASONING model — it spends
+%% tokens on hidden reasoning_content and often returns empty content on
+%% finish_reason=length, i.e. you pay for thinking that never becomes an answer.
+%% Set MELIOUS_MODEL to a cheaper instruct model to stop that burn.
+-define(MELIOUS_MODEL_DEFAULT, <<"qwen3.5-9b">>).
 -define(GROQ_URL, "https://api.groq.com/openai/v1/chat/completions").
 -define(GROQ_MODEL, <<"openai/gpt-oss-20b">>).
 -define(CEREBRAS_URL, "https://api.cerebras.ai/v1/chat/completions").
@@ -70,7 +75,7 @@ reason(Character, Stimulus) ->
 
 -spec reason_messages([map()]) -> {ok, binary()} | {error, term()}.
 reason_messages(Messages) ->
-    reason_messages(Messages, ?MELIOUS_MODEL).
+    reason_messages(Messages, ?MELIOUS_MODEL_DEFAULT).
 
 -spec reason_messages([map()], binary()) -> {ok, binary()} | {error, term()}.
 reason_messages(Messages, _Model) ->
@@ -125,7 +130,7 @@ provider_config("cerebras") -> #{fmt => openai, url => ?CEREBRAS_URL, model => ?
                                  keyenv => "CEREBRAS_API_KEYS", label => "cerebras"};
 provider_config("mistral")  -> #{fmt => openai, url => ?MISTRAL_URL, model => ?MISTRAL_MODEL,
                                  keyenv => "MISTRAL_API_KEYS", label => "mistral"};
-provider_config("melious")  -> #{fmt => openai, url => ?MELIOUS_URL, model => ?MELIOUS_MODEL,
+provider_config("melious")  -> #{fmt => openai, url => ?MELIOUS_URL, model => melious_model(),
                                  keyenv => "MELIOUS_API_KEY", label => "melious"};
 provider_config("colibri")  -> #{fmt => openai, url => colibri_url(), model => colibri_model(),
                                  keyenv => "COLIBRI_API_KEY", label => "colibri", keyless => true};
@@ -143,6 +148,15 @@ colibri_model() ->
     case os:getenv("COLIBRI_MODEL") of
         M when is_list(M), M =/= "" -> unicode:characters_to_binary(M);
         _Unset                      -> ?COLIBRI_MODEL_DEFAULT
+    end.
+
+%% The melious model, env-driven so it can be switched (reasoning -> instruct)
+%% without a rebuild. See the MELIOUS_MODEL_DEFAULT note on the cost of reasoning
+%% models.
+melious_model() ->
+    case os:getenv("MELIOUS_MODEL") of
+        M when is_list(M), M =/= "" -> unicode:characters_to_binary(M);
+        _Unset                      -> ?MELIOUS_MODEL_DEFAULT
     end.
 
 %% ===================================================================

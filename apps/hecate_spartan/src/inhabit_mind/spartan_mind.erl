@@ -41,8 +41,10 @@
 -define(STM_SHOW, 8).
 
 %% A mind reasons at most once per cooldown, so a lively square cannot spiral
-%% into a token-burn loop. Tunable per node via app-env `mind_cooldown_ms'.
--define(DEFAULT_COOLDOWN_MS, 15000).
+%% into a token-burn loop. Env-driven per node (HECATE_MIND_COOLDOWN_MS), else
+%% app-env `mind_cooldown_ms'. Default raised to 60s: at paid providers, once
+%% every 15s across a society was a real cost driver — 1 min is calmer + cheaper.
+-define(DEFAULT_COOLDOWN_MS, 60000).
 
 %% When a broadcast lands, the whole society reacts at once. Spread the reasoning
 %% over a few seconds so eight minds do not hit the (load-sensitive) Melious
@@ -197,7 +199,16 @@ consider(_Body, _Ready) ->
     skip.
 
 cooldown_ms() ->
-    application:get_env(hecate_spartan, mind_cooldown_ms, ?DEFAULT_COOLDOWN_MS).
+    case os:getenv("HECATE_MIND_COOLDOWN_MS") of
+        V when is_list(V), V =/= "" -> parse_cooldown(V);
+        _Unset -> application:get_env(hecate_spartan, mind_cooldown_ms, ?DEFAULT_COOLDOWN_MS)
+    end.
+
+parse_cooldown(S) ->
+    case string:to_integer(S) of
+        {I, _} when is_integer(I), I > 0 -> I;
+        _NotPositiveInt                  -> ?DEFAULT_COOLDOWN_MS
+    end.
 
 %% --- the 4-layer context ---
 
