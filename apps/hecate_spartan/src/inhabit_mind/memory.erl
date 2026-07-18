@@ -12,6 +12,15 @@
 -module(memory).
 
 -export([open/2, observe/2, consolidated/1, recent_stm/2, tiers/0, store_name/2, sleep_name/1]).
+-export([stm_count/1]).
+
+%% @doc How many raw turns sit in STM right now — the Sleep Cycle's pressure
+%% gauge, surfaced to the mind's HUD so it can see consolidation approaching.
+-spec stm_count(binary()) -> non_neg_integer().
+stm_count(Did) ->
+    try memory_store:count(store_name(Did, stm))
+    catch _:_ -> 0
+    end.
 
 -spec tiers() -> [{atom(), binary()}].
 tiers() ->

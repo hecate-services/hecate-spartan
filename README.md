@@ -164,15 +164,34 @@ what is his:
 - **The backend-evolution pipeline**: the seam where neuroevolved models (DXNN's
   lineage) become the mind's engine.
 
-**Honesty about the port.** What runs today carries his *foundation*: the decoupled
-identity, the four-layer context and HUD, a self-authoring file **Soul** (areas of
-consciousness, one process per archive), the reactive cognitive loop, provider
-resilience — and now the **memory faculty**: STM/CMO/MSO tiers with a **Sleep
-Cycle** that consolidates raw history into condensed memory. His deeper *cognition*
-is still ahead of us: the linked A-Mem long-term store, MINDfulness, self-alerts,
-the full set of archives, and world reach (sovereign drones are partly here, as
-convened committees of lens-drones). Those are his Phases 2 to 4, and they are the
-parts we most admire.
+**Honesty about the port.** What runs today carries his *foundation* — the
+decoupled identity, the four-layer context and a proprioceptive **HUD** (token
+cost, STM pressure, armed self-alerts), a self-authoring file **Soul** (one
+process per archive), the reactive loop, provider resilience — and now most of
+his deeper *cognition* as well:
+
+- **MINDfulness** — draft-then-verify: the mind drafts, then re-audits its own
+  draft against context (confabulation, sycophancy, hallucination) before it
+  acts. Gated to genuine input, so never his idle spin.
+- **A-Mem long-term memory** — a linked, semantic store: memories embed (over
+  the mesh via `io.hecate.embed`, lexical fallback), link to their nearest
+  neighbours, and recall follows those chains. Auto-injected against every
+  stimulus.
+- **Self-alerts** — the token-clock scheduler: a mind reminds itself after N
+  tokens of thought; reminders survive restarts.
+- **The full nine-archive Soul** — charter, lessons, philosophy, journal, ideas,
+  what-I-want, tool-manifest, and the **two-tier Knowledge Library** (a
+  Knowledge Map always in context, the deep library consulted on demand).
+- **Poison-pill defusal** — untrusted feed/peer text is enveloped and injection
+  openers flagged before it enters the mind's context.
+- **Sovereign drones** — convened committees of lens-drones (bounded).
+- **Self-modification** — the BEAM-safe seat: a mind amends its own genesis
+  addendum (how it operates), verified by an adversarial pass before adoption.
+
+What remains genuinely ahead: the **backend-evolution** pipeline is a live seam
+(a `neuroevolved` provider clause) awaiting a faber-served model to plug in;
+full arbitrary self-rewriting of code stays out of a live node by design. These
+were his Phases 2 to 4, and they are the parts we most admire.
 
 **What is ours, so credit stays honest.** The substrate is our engineering, not
 his: a **store-free, mesh-native** service — mesh Ed25519 + UCAN identity, ETS
@@ -183,8 +202,10 @@ as an event-sourced aggregate (reckon-db streams); we **walked that back** and
 returned to his file-per-archive model, because the Soul is authored, not
 transacted — the critical case is in
 [`docs/DESIGN_SOUL_PERSISTENCE.md`](docs/DESIGN_SOUL_PERSISTENCE.md). Long-term
-memory is currently **lexical and in-process** (word-overlap recall, no ONNX and
-no external embedder). This is substrate in service of his mind, not a replacement
+memory is **mesh-first**: embeddings come from `hecate-embedder` over the mesh
+(`io.hecate.embed`), with a direct local Ollama and, failing both, lexical
+word-overlap as graceful fallbacks — so a mind keeps its memory even when the
+embedder is dark. This is substrate in service of his mind, not a replacement
 for it.
 
 The lineage closes a circle: DXNN was neuroevolution on Erlang, and Gene's mind

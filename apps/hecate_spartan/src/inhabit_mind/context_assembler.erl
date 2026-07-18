@@ -85,6 +85,11 @@ consolidated_band(_None) ->
 -define(CHARTER_MAX, 2000).
 -define(LESSONS_MAX, 1500).
 -define(JOURNAL_MAX, 1000).
+-define(PHILOSOPHY_MAX, 1200).
+-define(WANT_MAX, 800).
+-define(IDEAS_MAX, 800).
+-define(KMAP_MAX, 1200).
+-define(ADDENDUM_MAX, 1200).
 
 gist_block(_Title, [])    -> [];
 gist_block(Title, Items) ->
@@ -114,7 +119,15 @@ mission_reminder(_Mission) ->
 
 l1(Soul) ->
     iolist_to_binary([?GENESIS_CORE,
-                      "\n\nGenesis version: ", mget(genesis_version, Soul, <<"0">>)]).
+                      "\n\nGenesis version: ", mget(genesis_version, Soul, <<"0">>),
+                      genesis_addendum_block(mget(genesis_addendum, Soul, <<>>))]).
+
+%% The mind's own extension of the genesis core: operating principles it has
+%% authored for itself via evolve_self. Part of L1 (interface knowledge), so a
+%% mind's self-authored rules ride in the stable, cacheable prefix.
+genesis_addendum_block(<<>>) -> [];
+genesis_addendum_block(Md)   ->
+    ["\n\nYour own operating principles (self-authored):\n", clip_tail(Md, ?ADDENDUM_MAX)].
 
 %% ===================================================================
 %% L2 — the Soul archive
@@ -127,7 +140,11 @@ l2(Soul) ->
         "DID: ", mget(did, Soul, <<"(no did)">>), "\n",
         brief_block(mget(founding_brief, Soul, <<>>)),
         charter_block(mget(charter, Soul, <<>>)),
+        philosophy_block(mget(philosophy, Soul, <<>>)),
+        what_i_want_block(mget(what_i_want, Soul, <<>>)),
         lessons_block(mget(lessons, Soul, <<>>)),
+        ideas_block(mget(ideas, Soul, <<>>)),
+        knowledge_map_block(mget(knowledge_map, Soul, <<>>)),
         journal_block(mget(journal, Soul, <<>>))
     ]).
 
@@ -148,6 +165,23 @@ lessons_block(Md)   -> ["\nLessons you have learned:\n", clip_tail(Md, ?LESSONS_
 
 journal_block(<<>>) -> [];
 journal_block(Md)   -> ["\nYour cognitive journal:\n", clip_tail(Md, ?JOURNAL_MAX), "\n"].
+
+philosophy_block(<<>>) -> [];
+philosophy_block(Md)   -> ["\nYour philosophy of life:\n", clip_head(Md, ?PHILOSOPHY_MAX), "\n"].
+
+what_i_want_block(<<>>) -> [];
+what_i_want_block(Md)   -> ["\nWhat you want (your own goals):\n", clip_head(Md, ?WANT_MAX), "\n"].
+
+ideas_block(<<>>) -> [];
+ideas_block(Md)   -> ["\nIdeas and thoughts you have kept:\n", clip_tail(Md, ?IDEAS_MAX), "\n"].
+
+%% The Knowledge Map is the always-in-context INDEX of what the mind has stored
+%% in its Knowledge Library — "you can't remember what you can't remember."
+%% Titles only; the full text is retrieved on demand with the consult tool.
+knowledge_map_block(<<>>) -> [];
+knowledge_map_block(Md)   ->
+    ["\nWhat you know (Knowledge Map — consult a title to read it in full):\n",
+     clip_tail(Md, ?KMAP_MAX), "\n"].
 
 %% ===================================================================
 %% L3 — the recent-history window (STM, from the memory faculty)

@@ -14,10 +14,13 @@
                  <<"the cat slept in the afternoon sun">>]).
 
 memory_test_() ->
-    %% Lexical, in-process memory: no apps to start.
+    %% Exercise the lexical fallback path: disable the embedder so there is no
+    %% mesh call and no network, and recall degrades to deterministic word
+    %% overlap (the mechanics under test here; semantic quality is the real
+    %% embedder's concern, validated separately).
     {setup,
-     fun() -> ok end,
-     fun(_) -> ok end,
+     fun() -> application:set_env(hecate_spartan, embed_enabled, false) end,
+     fun(_) -> application:unset_env(hecate_spartan, embed_enabled) end,
      [
       fun stores_and_grows/0,
       fun recall_returns_stored_texts/0,

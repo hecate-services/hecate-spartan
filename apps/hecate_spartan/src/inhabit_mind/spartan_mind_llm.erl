@@ -69,6 +69,11 @@
 %% normal turn.
 -define(COLIBRI_TIMEOUT_MS, 600000).
 -define(COLIBRI_MAX_TOKENS, 160).
+%% Backend-evolution seam (faber-tweann / DXNN lineage), served OpenAI-compat.
+%% Default assumes the model is served co-located; a deployment points
+%% HECATE_NEUROEVO_URL at wherever it actually runs.
+-define(NEUROEVO_URL_DEFAULT, "http://127.0.0.1:8600/v1/chat/completions").
+-define(NEUROEVO_MODEL_DEFAULT, <<"faber-tweann">>).
 
 -define(TIMEOUT_MS, 120000).
 -define(MAX_TOKENS, 500).
@@ -150,6 +155,15 @@ provider_config("melious")  -> #{fmt => openai, url => ?MELIOUS_URL, model => me
 provider_config("colibri")  -> #{fmt => openai, url => colibri_url(), model => colibri_model(),
                                  keyenv => "COLIBRI_API_KEY", label => "colibri", keyless => true,
                                  timeout => ?COLIBRI_TIMEOUT_MS, max_tokens => ?COLIBRI_MAX_TOKENS};
+%% The backend-evolution seam: a NEUROEVOLVED model (faber-tweann, DXNN's
+%% lineage) served OpenAI-compatibly becomes the mind's engine, plugged in by
+%% config exactly like any other provider. Keyless + patient, like colibrì: it is
+%% local, sovereign, and may be slow. Endpoint/model env-driven; unset until a
+%% faber model is served, at which point adding `neuroevolved' to a mind's
+%% provider pool is all it takes to think with an evolved brain.
+provider_config("neuroevolved") -> #{fmt => openai, url => neuroevo_url(), model => neuroevo_model(),
+                                     keyenv => "NEUROEVO_API_KEY", label => "neuroevolved",
+                                     keyless => true, timeout => ?COLIBRI_TIMEOUT_MS};
 provider_config(_Unknown)   -> undefined.
 
 %% colibrì's endpoint + model are deployment facts (which box, which converted
@@ -164,6 +178,18 @@ colibri_model() ->
     case os:getenv("COLIBRI_MODEL") of
         M when is_list(M), M =/= "" -> unicode:characters_to_binary(M);
         _Unset                      -> ?COLIBRI_MODEL_DEFAULT
+    end.
+
+neuroevo_url() ->
+    case os:getenv("HECATE_NEUROEVO_URL") of
+        U when is_list(U), U =/= "" -> U;
+        _Unset                      -> ?NEUROEVO_URL_DEFAULT
+    end.
+
+neuroevo_model() ->
+    case os:getenv("HECATE_NEUROEVO_MODEL") of
+        M when is_list(M), M =/= "" -> unicode:characters_to_binary(M);
+        _Unset                      -> ?NEUROEVO_MODEL_DEFAULT
     end.
 
 %% The melious model, env-driven so it can be switched (reasoning -> instruct)

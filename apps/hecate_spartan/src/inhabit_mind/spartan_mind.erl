@@ -64,10 +64,12 @@
              scratchpad = <<>> :: binary(),
              missions   = #{}  :: #{binary() => binary()},
              tokens_used = 0   :: non_neg_integer(),
+             last_tokens = 0   :: non_neg_integer(),
              last_reasoned = 0 :: integer(),
              locale     :: binary() | undefined,
              subs = []  :: [reference()],
              memory       :: mind_memory:mem() | undefined,
+             alerts = []  :: [self_alerts:alert()],
              busy = false :: boolean()}).
 
 start_link(Spec) ->
@@ -84,10 +86,12 @@ init(#{name := Name, character := Brief} = Spec) ->
     %% boot. Until it is ready the mind simply recalls nothing.
     self() ! setup_memory,
     Locale = maps:get(locale, Spec, hecate_spartan_service:locale()),
-    logger:info("[spartan_mind] ~ts awake as ~ts", [Name, Did]),
+    Alerts = self_alerts:load(hecate_spartan_service:data_dir(), Did),
+    logger:info("[spartan_mind] ~ts awake as ~ts (~b self-alert(s))",
+                [Name, Did, length(Alerts)]),
     {ok, #st{name = Name, did = Did, priv = Priv, pub = Pub,
              genesis_version = genesis_version(), identity = Identity,
-             missions = seed_missions(), locale = Locale}}.
+             missions = seed_missions(), locale = Locale, alerts = Alerts}}.
 
 handle_call(_Req, _From, St) -> {reply, {error, unknown_call}, St}.
 handle_cast(_Msg, St)        -> {noreply, St}.
@@ -96,6 +100,13 @@ handle_info(subscribe, St) ->
     {noreply, do_subscribe(St)};
 handle_info(setup_memory, St) ->
     {noreply, setup_memory(St)};
+%% The off-process seeder finished embedding the mind's past; swap the seeded
+%% long-term memory in. Turns remembered during the brief seed window are in the
+%% now-replaced empty store; at boot that is at most a turn or two, acceptable.
+handle_info({memory_ready, Mem}, #st{name = Name} = St) ->
+    logger:info("[spartan_mind] ~ts memory ready (~b recalled)",
+                [Name, mind_memory:size(Mem)]),
+    {noreply, St#st{memory = Mem}};
 handle_info({macula_event, _Ref, Topic, Payload, _Meta}, St) ->
     {noreply, on_mesh_event(Topic, Payload, St)};
 handle_info({macula_event_gone, _Ref, _Reason}, St) ->
@@ -108,6 +119,12 @@ handle_info({reasoned, Heard, Text, ToolCalls, Tokens}, St) ->
 handle_info({reasoning_failed, Why}, #st{name = Name} = St) ->
     logger:notice("[spartan_mind] ~ts could not reason: ~p", [Name, Why]),
     {noreply, St#st{busy = false}};
+%% A self-alert has come due: the mind reminded itself, and now reasons about the
+%% reminder as a fresh stimulus (from `self', so the gate does not skip it).
+handle_info({self_alert, Note}, St) ->
+    {noreply, maybe_react(#{from => <<"self">>,
+                            body => <<"[SELF-ALERT] you asked to be reminded: ", Note/binary>>},
+                          St)};
 handle_info(_Info, St) ->
     {noreply, St}.
 
@@ -173,7 +190,10 @@ maybe_react(_Payload, St) ->
 
 react({ok, Message}, St) ->
     Self = self(),
-    Messages = build_context(Message, St),
+    %% Defuse the stimulus (poison-pill) before it enters context: peers and the
+    %% world feed are untrusted. The raw Message is still carried to the reasoned
+    %% handler, so the mind REMEMBERS what it actually heard, not the envelope.
+    Messages = build_context(defuse:defuse(Message), St),
     Tools = mind_tools:manifest(),
     _ = spawn(fun() -> run_reasoning(Self, Message, Messages, Tools) end),
     St#st{busy = true, last_reasoned = erlang:system_time(millisecond)};
@@ -182,7 +202,8 @@ react(skip, St) ->
 
 run_reasoning(Self, Message, Messages, Tools) ->
     timer:sleep(rand:uniform(?STAGGER_MS)),
-    case spartan_mind_llm:reason_tools(Messages, Tools) of
+    %% MINDfulness: draft then verify (a no-op passthrough when disabled).
+    case mindfulness:reason(Messages, Tools) of
         {ok, {Text, ToolCalls, Tokens}} ->
             Self ! {reasoned, Message, Text, ToolCalls, Tokens};
         {error, Why} ->
@@ -237,7 +258,7 @@ build_context(Message, #st{did = Did, identity = Id, memory = Mem} = St) ->
         consolidated => memory:consolidated(Did),
         memories   => recall_memories(Mem, Message),
         mission    => render_missions(St#st.missions),
-        hud        => hud(Recent, St#st.tokens_used, mem_size(Mem))
+        hud        => hud(Recent, St, mem_size(Mem))
     }).
 
 %% Recall the memories nearest in meaning to this stimulus. Best-effort: an
@@ -286,12 +307,34 @@ seed_from_app_env(Text) -> #{<<"primary">> => Text}.
 %% the tokens it has spent so far, and how many committees it has convened that
 %% are still deliberating. The token count is the clock the sleep cycle and
 %% self-alerts run on in later waves.
-hud(Chron, Tokens, MemSize) ->
+%% Proprioception: what the mind can see about its own state and cost this turn.
+%% Cumulative + last-cycle tokens (so a mind can watch its own expense), the STM
+%% pressure counting toward the next Sleep-Cycle consolidation, self-alerts armed
+%% and how much thinking until the next fires, memory size, drones deliberating,
+%% and whether MINDfulness (draft-then-verify) is on.
+hud(Chron, #st{tokens_used = Tokens, last_tokens = Last, did = Did, alerts = Alerts}, MemSize) ->
     iolist_to_binary(["[HUD] turn=", integer_to_binary(length(Chron)),
                       " backends=", spartan_mind_llm:provider_labels(),
                       " tokens=", integer_to_binary(Tokens),
+                      " last=", integer_to_binary(Last),
+                      " stm=", integer_to_binary(memory:stm_count(Did)),
                       " mem=", integer_to_binary(MemSize),
-                      " caps=[] alerts=none drones=", integer_to_binary(drone_count())]).
+                      " alerts=", alerts_hud(Alerts, Tokens),
+                      " mindful=", mindful_hud(),
+                      " drones=", integer_to_binary(drone_count())]).
+
+alerts_hud([], _Tokens) ->
+    <<"none">>;
+alerts_hud(Alerts, Tokens) ->
+    Next = lists:min([maps:get(fire_at, A, Tokens) || A <- Alerts]),
+    iolist_to_binary([integer_to_binary(length(Alerts)),
+                      "(next in ", integer_to_binary(max(0, Next - Tokens)), " tok)"]).
+
+mindful_hud() ->
+    case os:getenv("HECATE_MIND_MINDFULNESS") of
+        V when V =:= "off"; V =:= "0"; V =:= "false" -> <<"off">>;
+        _On                                          -> <<"on">>
+    end.
 
 drone_count() ->
     try convene_committee:active_count() catch _:_ -> 0 end.
@@ -320,9 +363,17 @@ apply_tool_call(Call, #st{name = Name, did = Did} = St) ->
 
 apply_effect(Effect, #st{scratchpad = Scratch} = St) ->
     %% Self-authorship already wrote to the faculty's own process; the next turn
-    %% reads it live. Only the volatile scratchpad rides back in the effect — it
-    %% is a passing note, not a persisted faculty.
-    St#st{scratchpad = maps:get(scratchpad, Effect, Scratch)}.
+    %% reads it live. The volatile scratchpad rides back in the effect (a passing
+    %% note), and a set_self_alert schedules a token-clock reminder.
+    St1 = St#st{scratchpad = maps:get(scratchpad, Effect, Scratch)},
+    schedule_alert(maps:get(alert, Effect, undefined), St1).
+
+schedule_alert(undefined, St) ->
+    St;
+schedule_alert(#{after_tokens := After, note := Note}, #st{did = Did} = St) ->
+    Alerts = self_alerts:schedule(St#st.alerts, St#st.tokens_used, After, Note),
+    _ = self_alerts:save(hecate_spartan_service:data_dir(), Did, Alerts),
+    St#st{alerts = Alerts}.
 
 %% --- recording a lived turn ---
 
@@ -332,8 +383,26 @@ apply_effect(Effect, #st{scratchpad = Scratch} = St) ->
 %% a faculty rather than an event stream.
 remember_turn(Heard, Thought, _ToolCalls, Tokens, St) ->
     _ = observe_memory(St#st.did, Heard, Thought),
-    St#st{tokens_used = St#st.tokens_used + Tokens,
-          memory = remember_turn_in_memory(St#st.memory, Heard, Thought)}.
+    St1 = St#st{tokens_used = St#st.tokens_used + Tokens,
+                last_tokens = Tokens,
+                memory = remember_turn_in_memory(St#st.memory, Heard, Thought)},
+    fire_self_alerts(St1).
+
+%% The token clock advanced this turn; fire any self-alert whose budget it has
+%% now reached. Each fires as a stimulus (a self-message) the mind reasons about;
+%% the survivors are persisted so the countdown outlives a restart.
+fire_self_alerts(#st{alerts = []} = St) ->
+    St;
+fire_self_alerts(#st{alerts = Alerts, tokens_used = Tokens, did = Did} = St) ->
+    {Due, Pending} = self_alerts:fire_due(Alerts, Tokens),
+    _ = [self() ! {self_alert, maps:get(note, A, <<>>)} || A <- Due],
+    persist_alerts_if_changed(Due, Pending, Did),
+    St#st{alerts = Pending}.
+
+persist_alerts_if_changed([], _Pending, _Did) ->
+    ok;
+persist_alerts_if_changed(_Fired, Pending, Did) ->
+    self_alerts:save(hecate_spartan_service:data_dir(), Did, Pending).
 
 %% Feed a substantive turn into the memory faculty's STM tier; the Sleep Cycle
 %% consolidates it upward when the tier fills. Silent turns are not experiences.
@@ -352,17 +421,15 @@ remember_turn_in_memory(Mem, Heard, Thought)         -> mind_memory:remember(Mem
 %% Open the mind's lexical memory and seed it from the memory faculty's persisted
 %% STM, so a reboot does not give the mind amnesia: what it lived through before
 %% is recallable again. Best-effort; a mind without it just recalls nothing.
-setup_memory(#st{did = Did, name = Name} = St) ->
-    case mind_memory:open(Did) of
-        {ok, Mem0} ->
-            Mem = mind_memory:seed(Mem0, memory:recent_stm(Did, ?MEMORY_SEED_CAP)),
-            logger:info("[spartan_mind] ~ts memory ready (~b recalled)",
-                        [Name, mind_memory:size(Mem)]),
-            St#st{memory = Mem};
-        {error, Why} ->
-            logger:notice("[spartan_mind] ~ts has no long-term memory (~p)", [Name, Why]),
-            St
-    end.
+setup_memory(#st{did = Did} = St) ->
+    {ok, Mem0} = mind_memory:open(Did),
+    %% Seeding embeds up to ?MEMORY_SEED_CAP past turns, which is I/O per entry —
+    %% do it OFF this process so the mind is usable at once (it just recalls
+    %% nothing until the seeded memory swaps in). The empty store is live now.
+    Self = self(),
+    Seed = memory:recent_stm(Did, ?MEMORY_SEED_CAP),
+    _ = spawn(fun() -> Self ! {memory_ready, mind_memory:seed(Mem0, Seed)} end),
+    St#st{memory = Mem0}.
 
 %% One memory string per turn: the stimulus and the mind's own reading of it, so
 %% recall on a similar stimulus later surfaces how the mind thought last time.

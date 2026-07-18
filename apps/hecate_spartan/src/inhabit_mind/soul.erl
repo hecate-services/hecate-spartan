@@ -11,9 +11,11 @@
 %%% route a tool call to the faculty it belongs to.
 -module(soul).
 
--export([open/3, render/2, areas/0, area_name/2, dir/2]).
+-export([open/3, render/2, areas/0, area_name/2, dir/2, read_area/2]).
 -export([amend_charter/2, record_lesson/2, record_reflection/2,
          set_grand_strategy/2, set_working_memory/2]).
+-export([record_philosophy/2, record_idea/2, set_what_i_want/2,
+         set_tool_manifest/2, learn/3, consult/2, extend_genesis/2]).
 
 %% The areas of consciousness: {faculty, on-disk filename}. Gene's nine archives
 %% plus the two volatile faculties (grand strategy, working memory). Adding a
@@ -30,7 +32,11 @@ areas() ->
      {knowledge_map,     <<"KnowledgeMap.md">>},
      {knowledge_library, <<"KnowledgeLibrary.md">>},
      {grand_strategy,    <<"GrandStrategy.md">>},
-     {working_memory,    <<"WorkingMemory.md">>}].
+     {working_memory,    <<"WorkingMemory.md">>},
+     %% The mind's own extension to the genesis core (L1): operating principles
+     %% it has authored for itself. This is the BEAM-safe seat of self-
+     %% modification — a mind rewrites how it operates, not the Erlang it runs on.
+     {genesis_addendum,  <<"GenesisAddendum.md">>}].
 
 %% The registered name of one mind's one faculty. Stable per (DID, area), so a
 %% restarted area re-registers the same name. Bounded: minds-per-node x areas.
@@ -104,6 +110,66 @@ set_grand_strategy(Did, Text) ->
 -spec set_working_memory(binary(), binary()) -> ok.
 set_working_memory(Did, Text) ->
     soul_area:set(area_name(Did, working_memory), Text).
+
+-spec record_philosophy(binary(), binary()) -> ok.
+record_philosophy(Did, Statement) ->
+    soul_area:append(area_name(Did, philosophy),
+                     iolist_to_binary(["\n", Statement, "  ", stamp(), "\n"])).
+
+-spec record_idea(binary(), binary()) -> ok.
+record_idea(Did, Idea) ->
+    soul_area:append(area_name(Did, ideas),
+                     iolist_to_binary(["- ", Idea, "  ", stamp(), "\n"])).
+
+-spec set_what_i_want(binary(), binary()) -> ok.
+set_what_i_want(Did, Text) ->
+    soul_area:set(area_name(Did, what_i_want), Text).
+
+-spec set_tool_manifest(binary(), binary()) -> ok.
+set_tool_manifest(Did, Text) ->
+    soul_area:set(area_name(Did, tool_manifest), Text).
+
+%% @doc Extend the mind's own genesis addendum (self-modification). Appended to
+%% the operating principles it authors for itself; rendered in L1.
+-spec extend_genesis(binary(), binary()) -> ok.
+extend_genesis(Did, Principle) ->
+    soul_area:append(area_name(Did, genesis_addendum),
+                     iolist_to_binary(["\n- ", Principle, "  ", stamp(), "\n"])).
+
+%% @doc The two-tier Knowledge Library: "you can't remember what you can't
+%% remember." A learned fact goes into the LIBRARY (the deep store, retrieved on
+%% demand) AND a one-line entry into the MAP (the index, always in context) —
+%% so the mind always KNOWS what it has stored, and can `consult/2' the full
+%% text when a title is relevant.
+-spec learn(binary(), binary(), binary()) -> ok.
+learn(Did, Title, Knowledge) ->
+    ok = soul_area:append(area_name(Did, knowledge_library),
+                          iolist_to_binary(["\n## ", Title, "\n\n", Knowledge,
+                                            "  ", stamp(), "\n"])),
+    soul_area:append(area_name(Did, knowledge_map),
+                     iolist_to_binary(["- ", Title, "\n"])).
+
+%% @doc Retrieve everything stored under (or matching) a title from the deep
+%% library. Best-effort substring match; empty when nothing matches.
+-spec consult(binary(), binary()) -> binary().
+consult(Did, Title) ->
+    section_matching(Title, soul_area:read(area_name(Did, knowledge_library))).
+
+%% @doc Read one faculty's current content (for the context assembler / consult).
+-spec read_area(binary(), atom()) -> binary().
+read_area(Did, Area) ->
+    soul_area:read(area_name(Did, Area)).
+
+%% Pull the `## <Title>' sections whose heading contains the query (case-folded).
+section_matching(Query, Library) ->
+    Q = string:lowercase(Query),
+    Sections = binary:split(Library, <<"\n## ">>, [global]),
+    Hits = [S || S <- Sections, is_match(Q, S)],
+    iolist_to_binary(lists:join(<<"\n">>, Hits)).
+
+is_match(Q, Section) ->
+    Head = hd(binary:split(Section, <<"\n">>)),
+    binary:match(string:lowercase(Head), Q) =/= nomatch.
 
 %% --- identity file (dependency-free; brief base64'd so it may be multi-line) ---
 

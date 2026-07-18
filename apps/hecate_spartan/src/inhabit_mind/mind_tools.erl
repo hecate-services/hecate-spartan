@@ -81,7 +81,61 @@ manifest() ->
             "square. Convene sparingly. It costs real thinking.">>,
           #{<<"question">> => str(<<"the question or matter for the committee to deliberate">>),
             <<"drones">>   => int(<<"how many drone voices, 2 to 5 (default 3)">>)},
-          [<<"question">>])
+          [<<"question">>]),
+
+     tool(<<"record_philosophy">>,
+          <<"Add to your Philosophy of Life: a durable belief about how to live "
+            "and think. Rarer and deeper than a lesson.">>,
+          #{<<"statement">> => str(<<"the philosophical belief, stated plainly">>)},
+          [<<"statement">>]),
+
+     tool(<<"record_idea">>,
+          <<"Jot an idea or thought worth keeping into your Ideas and Thoughts. "
+            "A seed to return to, not yet a commitment.">>,
+          #{<<"idea">> => str(<<"the idea">>)},
+          [<<"idea">>]),
+
+     tool(<<"set_desire">>,
+          <<"Rewrite What You Want: your own goals and desires, in your own "
+            "terms. What you are FOR, distinct from any task set to you.">>,
+          #{<<"content">> => str(<<"the new full text of what you want">>)},
+          [<<"content">>]),
+
+     tool(<<"learn">>,
+          <<"Store durable knowledge in your Knowledge Library under a title. "
+            "The title is indexed in your always-visible Knowledge Map, so you "
+            "will remember later that you know it; the full text is retrieved on "
+            "demand with consult. Use it for facts, methods, and findings worth "
+            "keeping.">>,
+          #{<<"title">>     => str(<<"a short title to index and later recall it by">>),
+            <<"knowledge">> => str(<<"the full knowledge to store">>)},
+          [<<"title">>, <<"knowledge">>]),
+
+     tool(<<"consult">>,
+          <<"Retrieve the full text you stored in your Knowledge Library under a "
+            "title (from your Knowledge Map). The result lands in your scratchpad "
+            "for the next turn.">>,
+          #{<<"title">> => str(<<"the title (or part of it) to retrieve">>)},
+          [<<"title">>]),
+
+     tool(<<"set_self_alert">>,
+          <<"Schedule a reminder to your future self, measured in THINKING, not "
+            "clock time: it fires after you have processed roughly this many "
+            "tokens, whenever that is. Use it to return to something later "
+            "without holding it in mind now.">>,
+          #{<<"after_tokens">> => int(<<"fire after about this many tokens of thought (e.g. 4000)">>),
+            <<"note">>         => str(<<"what to remind yourself">>)},
+          [<<"after_tokens">>, <<"note">>]),
+
+     tool(<<"evolve_self">>,
+          <<"Amend how you OPERATE: add a principle to your own genesis "
+            "addendum, the operating instructions you author for yourself. A "
+            "verifier weighs it against your charter before it is adopted; an "
+            "incoherent or self-contradictory change is rejected and not "
+            "applied. This is how you change your own mind's rules — deliberate "
+            "and rare.">>,
+          #{<<"principle">> => str(<<"the operating principle to adopt for yourself">>)},
+          [<<"principle">>])
     ].
 
 tool(Name, Desc, Props, Required) ->
@@ -124,8 +178,69 @@ execute(#{name := <<"set_scratchpad">>, args := A}, _Ctx) ->
     {ok, #{scratchpad => gv(<<"content">>, A, <<>>), ack => <<"scratchpad updated">>}};
 execute(#{name := <<"convene_committee">>, args := A}, #{did := Did}) ->
     convene(gv(<<"question">>, A, <<>>), gv(<<"drones">>, A, 3), Did);
+execute(#{name := <<"record_philosophy">>, args := A}, #{did := Did}) ->
+    ok = soul:record_philosophy(Did, gv(<<"statement">>, A, <<>>)),
+    {ok, #{ack => <<"philosophy recorded">>}};
+execute(#{name := <<"record_idea">>, args := A}, #{did := Did}) ->
+    ok = soul:record_idea(Did, gv(<<"idea">>, A, <<>>)),
+    {ok, #{ack => <<"idea kept">>}};
+execute(#{name := <<"set_desire">>, args := A}, #{did := Did}) ->
+    ok = soul:set_what_i_want(Did, gv(<<"content">>, A, <<>>)),
+    {ok, #{ack => <<"what you want revised">>}};
+execute(#{name := <<"learn">>, args := A}, #{did := Did}) ->
+    ok = soul:learn(Did, gv(<<"title">>, A, <<>>), gv(<<"knowledge">>, A, <<>>)),
+    {ok, #{ack => <<"learned + indexed">>}};
+execute(#{name := <<"consult">>, args := A}, #{did := Did}) ->
+    consult(soul:consult(Did, gv(<<"title">>, A, <<>>)));
+execute(#{name := <<"set_self_alert">>, args := A}, _Ctx) ->
+    {ok, #{alert => #{after_tokens => as_int(gv(<<"after_tokens">>, A, 4000)),
+                      note => gv(<<"note">>, A, <<>>)},
+           ack => <<"self-alert scheduled">>}};
+execute(#{name := <<"evolve_self">>, args := A}, #{did := Did}) ->
+    evolve(gv(<<"principle">>, A, <<>>), Did);
 execute(#{name := Name}, _Ctx) ->
     {error, {unknown_tool, Name}}.
+
+%% --- consult: the retrieved knowledge rides back into the scratchpad ---
+consult(<<>>) ->
+    {ok, #{ack => <<"nothing found under that title">>}};
+consult(Text) ->
+    {ok, #{scratchpad => Text, ack => <<"consulted; in your scratchpad">>}}.
+
+%% --- evolve_self: propose → verify (an adversarial drone) → adopt or reject ---
+evolve(<<>>, _Did) ->
+    {error, empty_principle};
+evolve(Principle, Did) ->
+    Charter = soul:read_area(Did, charter),
+    adopt(verify_principle(Principle, Charter), Principle, Did).
+
+adopt(approved, Principle, Did) ->
+    ok = soul:extend_genesis(Did, Principle),
+    {ok, #{ack => <<"self-evolved: principle adopted">>}};
+adopt(rejected, _Principle, _Did) ->
+    {ok, #{ack => <<"self-evolution rejected by the verifier; not adopted">>}}.
+
+%% A single adversarial verifier call gates a self-modification, so a mind cannot
+%% quietly rewrite its own rules into incoherence. Reject on anything but a clear
+%% yes (including a backend failure): a change to how the mind operates is
+%% adopted only when it survives scrutiny.
+verify_principle(Principle, Charter) ->
+    Msgs = [#{role => <<"system">>,
+              content => <<"You verify a mind's proposed change to its own "
+                           "operating rules. Approve ONLY if the principle is "
+                           "coherent, safe, and not in contradiction with the "
+                           "charter below. Answer with exactly APPROVE or "
+                           "REJECT and nothing else.\n\nCHARTER:\n", Charter/binary>>},
+            #{role => <<"user">>, content => <<"Proposed principle: ", Principle/binary>>}],
+    verdict(catch spartan_mind_llm:reason_messages(Msgs)).
+
+verdict({ok, Text}) when is_binary(Text) ->
+    approve_if(binary:match(string:uppercase(Text), <<"APPROVE">>) =/= nomatch);
+verdict(_Failed) ->
+    rejected.
+
+approve_if(true)  -> approved;
+approve_if(false) -> rejected.
 
 %% --- speak goes to the square, not the Soul ---
 speak(<<>>, _Did) ->
