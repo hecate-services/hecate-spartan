@@ -49,6 +49,10 @@
 %% broker simultaneously. A few seconds of pacing is natural for a society.
 -define(STAGGER_MS, 5000).
 
+%% How long to wait before retrying a self-alert that came due while the mind was
+%% mid-thought (so a reminder is never dropped, only deferred).
+-define(SELF_ALERT_RETRY_MS, 3000).
+
 %% Long-term memory: at boot, seed the semantic index from up to this many of
 %% the mind's most recent past turns; on each turn, recall this many memories
 %% nearest in meaning to the stimulus into the mind's context.
@@ -119,12 +123,27 @@ handle_info({reasoned, Heard, Text, ToolCalls, Tokens}, St) ->
 handle_info({reasoning_failed, Why}, #st{name = Name} = St) ->
     logger:notice("[spartan_mind] ~ts could not reason: ~p", [Name, Why]),
     {noreply, St#st{busy = false}};
-%% A self-alert has come due: the mind reminded itself, and now reasons about the
-%% reminder as a fresh stimulus (from `self', so the gate does not skip it).
+%% A self-alert has come due. It is the mind's own scheduled intent, so it must
+%% NOT go through the cooldown/self-check gate (that throttles external stimulus
+%% spam) — fire it by calling react directly. If the mind is mid-thought, retry
+%% shortly rather than drop the reminder (the old code dropped it at the gate,
+%% after it had already been erased from disk).
+handle_info({self_alert, Note}, #st{busy = true} = St) ->
+    erlang:send_after(?SELF_ALERT_RETRY_MS, self(), {self_alert, Note}),
+    {noreply, St};
 handle_info({self_alert, Note}, St) ->
-    {noreply, maybe_react(#{from => <<"self">>,
-                            body => <<"[SELF-ALERT] you asked to be reminded: ", Note/binary>>},
-                          St)};
+    Body = <<"[SELF-ALERT] you asked to be reminded: ", Note/binary>>,
+    {noreply, react({ok, Body}, St)};
+%% The reasoning process finished normally (it already reported via {reasoned} /
+%% {reasoning_failed}); nothing to do. An ABNORMAL death with `busy' still set is
+%% a crash that never reported — clear busy so the mind does not go deaf forever.
+handle_info({'DOWN', _Ref, process, _Pid, normal}, St) ->
+    {noreply, St};
+handle_info({'DOWN', _Ref, process, _Pid, Reason}, #st{name = Name, busy = true} = St) ->
+    logger:notice("[spartan_mind] ~ts reasoning died (~p); clearing busy", [Name, Reason]),
+    {noreply, St#st{busy = false}};
+handle_info({'DOWN', _Ref, process, _Pid, _Reason}, St) ->
+    {noreply, St};
 handle_info(_Info, St) ->
     {noreply, St}.
 
@@ -195,7 +214,10 @@ react({ok, Message}, St) ->
     %% handler, so the mind REMEMBERS what it actually heard, not the envelope.
     Messages = build_context(defuse:defuse(Message), St),
     Tools = mind_tools:manifest(),
-    _ = spawn(fun() -> run_reasoning(Self, Message, Messages, Tools) end),
+    %% spawn_MONITOR, not spawn: if the reasoning process dies abnormally without
+    %% reporting (a crash the inner catches miss), the DOWN handler clears `busy',
+    %% so the mind can never wedge deaf-and-busy-forever.
+    _ = spawn_monitor(fun() -> run_reasoning(Self, Message, Messages, Tools) end),
     St#st{busy = true, last_reasoned = erlang:system_time(millisecond)};
 react(skip, St) ->
     St.
@@ -433,8 +455,13 @@ setup_memory(#st{did = Did} = St) ->
 
 %% One memory string per turn: the stimulus and the mind's own reading of it, so
 %% recall on a similar stimulus later surfaces how the mind thought last time.
+%% SANITIZE the heard text before it enters memory. `Heard' is untrusted (feed /
+%% peers); if stored raw it would re-enter context un-defused on a later turn via
+%% the chronicle and semantic recall (injection laundering). The thought is the
+%% mind's own, so it is left as-is.
 compose_memory(Heard, Thought) ->
-    iolist_to_binary(["When you heard: ", safe(Heard), " you thought: ", safe(Thought)]).
+    iolist_to_binary(["When you heard: ", defuse:sanitize(safe(Heard)),
+                      " you thought: ", safe(Thought)]).
 
 safe(B) when is_binary(B) -> B;
 safe(_NotBinary)          -> <<>>.

@@ -235,9 +235,19 @@ verify_principle(Principle, Charter) ->
     verdict(catch spartan_mind_llm:reason_messages(Msgs)).
 
 verdict({ok, Text}) when is_binary(Text) ->
-    approve_if(binary:match(string:uppercase(Text), <<"APPROVE">>) =/= nomatch);
+    approve_if(starts_with_approve(string:trim(Text)));
 verdict(_Failed) ->
     rejected.
+
+%% Reject-biased: approve ONLY when the verifier's answer BEGINS with APPROVE.
+%% A substring match wrongly passed "I cannot APPROVE" and "DO NOT APPROVE"; the
+%% verifier is instructed to answer with exactly APPROVE or REJECT, so anchoring
+%% at the start is both correct and safe.
+starts_with_approve(Text) ->
+    case string:uppercase(Text) of
+        <<"APPROVE", _/binary>> -> true;
+        _NotApprove             -> false
+    end.
 
 approve_if(true)  -> approved;
 approve_if(false) -> rejected.

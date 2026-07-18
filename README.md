@@ -170,13 +170,19 @@ cost, STM pressure, armed self-alerts), a self-authoring file **Soul** (one
 process per archive), the reactive loop, provider resilience — and now most of
 his deeper *cognition* as well:
 
-- **MINDfulness** — draft-then-verify: the mind drafts, then re-audits its own
-  draft against context (confabulation, sycophancy, hallucination) before it
-  acts. Gated to genuine input, so never his idle spin.
-- **A-Mem long-term memory** — a linked, semantic store: memories embed (over
-  the mesh via `io.hecate.embed`, lexical fallback), link to their nearest
-  neighbours, and recall follows those chains. Auto-injected against every
-  stimulus.
+- **MINDfulness** — draft-then-verify: the mind drafts, then re-audits both its
+  reasoning AND the actions it chose against context (confabulation, sycophancy,
+  hallucination, unverified provenance) before any action runs. Gated to genuine
+  input, so never his idle spin.
+- **A-Mem long-term memory** — a linked, semantic store: memories embed
+  (mesh-first via `io.hecate.embed`, then local Ollama, then lexical fallback),
+  link to their nearest neighbours, and recall follows those links one hop and
+  re-ranks. Auto-injected against every stimulus. **Honest limits (vs Gene's
+  LTM):** the linking is cosine nearest-neighbour, not his LLM-driven A-Mem
+  linking (the Sleep-Cycle seat for that exists but is unused); and the store is
+  currently in-process, reseeded from recent STM on restart rather than a durable
+  whole-life index — so it is targeted recent recall, not yet a persistent
+  life-long memory. Both are deliberate next steps, not "done".
 - **Self-alerts** — the token-clock scheduler: a mind reminds itself after N
   tokens of thought; reminders survive restarts.
 - **The full nine-archive Soul** — charter, lessons, philosophy, journal, ideas,

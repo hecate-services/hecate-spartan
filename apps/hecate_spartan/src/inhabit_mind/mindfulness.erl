@@ -33,12 +33,21 @@ verify({error, _} = E, _Messages, _Tools) ->
 verify({ok, {Draft, Calls, T1}}, Messages, Tools) ->
     audit(Draft, Calls, T1, Messages, Tools).
 
-%% Nothing drafted (a silent PASS) needs no audit.
-audit(<<>>, Calls, T1, _Messages, _Tools) ->
-    {ok, {<<>>, Calls, T1}};
 audit(Draft, Calls, T1, Messages, Tools) ->
-    VerifyMsgs = Messages ++ [draft_msg(Draft), audit_instruction()],
+    audit(has_content(Draft, Calls), Draft, Calls, T1, Messages, Tools).
+
+%% A truly silent PASS (no text AND no actions) needs no audit. But a draft that
+%% is ACTION-ONLY (empty text, tool calls chosen) is the case Gene's audit exists
+%% for — it must be verified, not waved through, so an action-only draft (common
+%% for tool-calling models) is no longer a bypass.
+audit(false, Draft, Calls, T1, _Messages, _Tools) ->
+    {ok, {Draft, Calls, T1}};
+audit(true, Draft, Calls, T1, Messages, Tools) ->
+    VerifyMsgs = Messages ++ [draft_msg(Draft, Calls), audit_instruction()],
     reconcile(spartan_mind_llm:reason_tools(VerifyMsgs, Tools), Draft, Calls, T1).
+
+has_content(<<>>, []) -> false;
+has_content(_Draft, _Calls) -> true.
 
 %% Verified output is canonical (token cost = both passes). If the verify pass
 %% itself fails, keep the draft rather than fall silent.
@@ -47,8 +56,38 @@ reconcile({ok, {Text, Calls, T2}}, _Draft, _DraftCalls, T1) ->
 reconcile({error, _}, Draft, DraftCalls, T1) ->
     {ok, {Draft, DraftCalls, T1}}.
 
-draft_msg(Draft) ->
-    #{role => <<"assistant">>, content => Draft}.
+%% Show the verifier BOTH the private reasoning AND the actions the draft chose
+%% (speak/convene/…), so the audit gates the ACTIONS — Gene's design — not just
+%% the text a second time.
+draft_msg(Draft, Calls) ->
+    #{role => <<"assistant">>,
+      content => iolist_to_binary([draft_text(Draft), render_calls(Calls)])}.
+
+draft_text(<<>>) -> <<"(no private text)">>;
+draft_text(Text) -> Text.
+
+render_calls([]) ->
+    [];
+render_calls(Calls) ->
+    ["\n\nActions you propose to take (verify each is warranted before it runs):\n",
+     [["- ", action_desc(C), "\n"] || C <- Calls]].
+
+action_desc(Call) when is_map(Call) ->
+    iolist_to_binary([maps:get(name, Call, <<"?">>), " ",
+                      args_preview(maps:get(args, Call, #{}))]);
+action_desc(_Other) ->
+    <<"(unrecognized action)">>.
+
+args_preview(Args) when is_map(Args), map_size(Args) > 0 ->
+    clip(safe_encode(Args));
+args_preview(_Empty) ->
+    <<>>.
+
+safe_encode(Args) ->
+    try jsx:encode(Args) catch _:_ -> <<"{...}">> end.
+
+clip(B) when byte_size(B) =< 200 -> B;
+clip(B) -> <<(binary:part(B, 0, 200))/binary, "…"/utf8>>.
 
 audit_instruction() ->
     #{role => <<"system">>,

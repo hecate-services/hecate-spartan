@@ -15,7 +15,7 @@
 %%% so the mind sees the attempt and can call it out.
 -module(defuse).
 
--export([defuse/1]).
+-export([defuse/1, sanitize/1]).
 
 -define(MAX, 4000).
 
@@ -23,6 +23,17 @@
 defuse(Text) when is_binary(Text), Text =/= <<>> ->
     envelope(warn(any_injection(Text), clip(strip_controls(Text))));
 defuse(_NotBinary) ->
+    <<>>.
+
+%% @doc Sanitize untrusted text that will be STORED and re-rendered later
+%% (memory, chronicle) rather than shown as a live trigger: strip the control /
+%% zero-width smuggling characters and flag an injection opener, but WITHOUT the
+%% heavy envelope (which would bloat every remembered turn). This closes the
+%% injection-laundering path where raw stimulus re-enters context via recall.
+-spec sanitize(binary()) -> binary().
+sanitize(Text) when is_binary(Text), Text =/= <<>> ->
+    warn(any_injection(Text), clip(strip_controls(Text)));
+sanitize(_NotBinary) ->
     <<>>.
 
 envelope(Body) ->
