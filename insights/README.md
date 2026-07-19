@@ -25,11 +25,14 @@ explained plainly, we do not understand it well enough yet.
 | [005](005_the_harness_as_mesh_services.md) | The experiment as three mesh services | Can the whole program be a **world / referee / contestant** harness (its own `hecate-arena` repo), and does that turn "no peeking" from discipline into architecture (and into a league with real selection)? |
 | [006](006_arm_c_kernel_and_inject.md) | Arm C: the kernel + inject | What does "inject retrieved memory into the engine" concretely mean for the pilot, and does arm C beat both the detector (D) and the raw memory (E)? |
 | [007](007_experiment_1b_pre_registration.md) | Experiment 1b: a harder world | 1a failed (k-NN heaven); what pre-registered harder world (nonlinear, noisier, sparser, perturbed recurrence) would let a model beat lookup — decided before it runs? |
+| [008](008_experiment_1b_result_and_the_arm_f_correction.md) | Experiment 1b: the result, and the arm-F correction | C lost 1b too — but does that kill the *kernel*, or just its *engine*? The missing control (arm F = engine alone) shows the faculties beat their own engine; the deficit is the engine class. |
 
 ## The one line, so far
 
-Nothing we have built yet produces a number that could go up. Everything below is
-in service of finding the right number, the right sensor to feed it, and the right
-engine to move it, so that the Spartan thesis (a sovereign kernel that improves
-behaviour over time, on a swappable engine) becomes an experiment instead of a
-vibe.
+We now have numbers that could go up, and a signed result that they did not — yet.
+The kernel loses to raw lookup on both worlds (1a, 1b), but arm F (the engine alone)
+shows the kernel faculties reliably beat *their own engine*: the deficit is the
+engine class, not the machinery. The next question (1b-prime) is whether fixing the
+engine and the match gate, in the same frozen world, grows that hair's-breadth
+advantage into a real one — so the Spartan thesis (a sovereign kernel that improves
+behaviour over time, on a swappable engine) stays an experiment, not a vibe.
