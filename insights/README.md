@@ -30,15 +30,18 @@ explained plainly, we do not understand it well enough yet.
 | [010](010_experiment_1b_prime_result_and_the_instrument_failure.md) | Experiment 1b-prime: a first positive, and an instrument failure | Engine+reset finally beat lookup (first C-over-E win) — but a units error in the precision guard gagged inject to 2 firings, so *memory* went untested. Signed partial + pre-registered instrument repair. |
 | [011](011_the_signed_negative_memory_is_falsified.md) | The signed negative: memory is falsified | Repaired, inject fired 507× and added nothing; a 100%-precision oracle is *reliably worse* than engine+reset. Restoration loses to restart under recurrence jitter. Thesis falsified; STOP. |
 | [012](012_what_survives_the_substrate_after_the_kernel_dies.md) | What survives: the substrate after the kernel dies | Inject died, but retrieval (external, queried) was the winner all along — which IS a public commons. Reframe: external freshness-aware memory + a sovereign commons, not an improving kernel. |
+| [013](013_the_scope_of_the_negative_and_the_frontier.md) | The scope of the negative, and the frontier | "Spartan is over" was an over-reach (a mood, not a measurement) — retracted. 011 kills *verbatim recall under drift*; abstraction-memory, learned dynamics, and present-tense faculties remain open. |
+| [014](014_experiment_m1_self_audit_economics_pre_registration.md) | Experiment M1: self-audit economics (pre-reg) | Does draft+verify cut hallucination enough to justify 2× compute? Mechanical checker (grounding), the deployed toggle, the first cost ledger. Pending Fable clearance (a hole: precision-only is gameable by under-extraction). |
 
 ## The one line, so far
 
-It is settled, and signed (note 011). We built the number the Spartan thesis needed,
-red-teamed the apparatus through eleven adversarial rounds, and the number came back:
-**forget faster, don't remember harder.** A competent online engine that resets on a
-detected shift beats nearest-neighbour lookup over the same experience (the surviving
-positive); episodic memory *replay* adds nothing — not at its designed precision, not
-with a 100%-precision oracle, because canonical exemplars go stale under recurrence
-drift and restoration loses to restart. The kernel-memory/inject thesis is falsified
-for numerical prediction in the pre-registered world class. Detection and forgetting
-earn their keep; memory does not. The honest next move is STOP, not a shopped world.
+One mechanism is signed dead (note 011): **verbatim** memory recall — replaying stored
+past under drift — loses to forget-and-relearn, even with a perfect recognizer,
+because the past returns changed. That kill is narrow and licensed to generalize along
+its mechanism; it does **not** bury the program (note 013 retracts that over-reach).
+Still open and untested: abstraction-memory (recall the shape, relearn the numbers),
+memory as learned dynamics, and every faculty that reads the *present* rather than the
+past — first of which, self-audit/mindfulness, is pre-registered as Experiment M1
+(note 014), on a mechanically-checkable task, carrying the program's first cost ledger.
+The method is the constant: a number, a kill threshold, and an adversary, before we
+believe anything.
