@@ -29,6 +29,7 @@ explained plainly, we do not understand it well enough yet.
 | [009](009_experiment_1b_prime_pre_registration.md) | Experiment 1b-prime: fix the contestant, not the world | Same frozen world; give arm C a rule-tuned engine, a strict rule-derived match gate, and a level-including reset — does the kernel now beat lookup? Fable-cleared (round 9) before building. |
 | [010](010_experiment_1b_prime_result_and_the_instrument_failure.md) | Experiment 1b-prime: a first positive, and an instrument failure | Engine+reset finally beat lookup (first C-over-E win) — but a units error in the precision guard gagged inject to 2 firings, so *memory* went untested. Signed partial + pre-registered instrument repair. |
 | [011](011_the_signed_negative_memory_is_falsified.md) | The signed negative: memory is falsified | Repaired, inject fired 507× and added nothing; a 100%-precision oracle is *reliably worse* than engine+reset. Restoration loses to restart under recurrence jitter. Thesis falsified; STOP. |
+| [012](012_what_survives_the_substrate_after_the_kernel_dies.md) | What survives: the substrate after the kernel dies | Inject died, but retrieval (external, queried) was the winner all along — which IS a public commons. Reframe: external freshness-aware memory + a sovereign commons, not an improving kernel. |
 
 ## The one line, so far
 
