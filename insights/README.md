@@ -31,7 +31,7 @@ explained plainly, we do not understand it well enough yet.
 | [011](011_the_signed_negative_memory_is_falsified.md) | The signed negative: memory is falsified | Repaired, inject fired 507× and added nothing; a 100%-precision oracle is *reliably worse* than engine+reset. Restoration loses to restart under recurrence jitter. Thesis falsified; STOP. |
 | [012](012_what_survives_the_substrate_after_the_kernel_dies.md) | What survives: the substrate after the kernel dies | Inject died, but retrieval (external, queried) was the winner all along — which IS a public commons. Reframe: external freshness-aware memory + a sovereign commons, not an improving kernel. |
 | [013](013_the_scope_of_the_negative_and_the_frontier.md) | The scope of the negative, and the frontier | "Spartan is over" was an over-reach (a mood, not a measurement) — retracted. 011 kills *verbatim recall under drift*; abstraction-memory, learned dynamics, and present-tense faculties remain open. |
-| [014](014_experiment_m1_self_audit_economics_pre_registration.md) | Experiment M1: self-audit economics (pre-reg) | Does draft+verify cut hallucination enough to justify 2× compute? Mechanical checker (grounding), the deployed toggle, the first cost ledger. Pending Fable clearance (a hole: precision-only is gameable by under-extraction). |
+| [014](014_experiment_m1_self_audit_economics_pre_registration.md) | Experiment M1: self-audit economics (pre-reg) | Does draft+verify cut hallucination enough to justify 2× compute? Snippet-anchored mechanical checker, constant-free kill rule (delete more garbage than good), structural token ceiling, the first cost ledger. Fable-cleared (round 14), build-ready. |
 
 ## The one line, so far
 
