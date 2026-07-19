@@ -24,6 +24,7 @@ explained plainly, we do not understand it well enough yet.
 | [004](004_engine_agnostic_kernel_contract.md) | The engine-agnostic kernel contract | What do "memory", "self-audit", "authorship", "continuity" mean when the engine is a net, not an LLM — and what honestly cannot port? |
 | [005](005_the_harness_as_mesh_services.md) | The experiment as three mesh services | Can the whole program be a **world / referee / contestant** harness (its own `hecate-arena` repo), and does that turn "no peeking" from discipline into architecture (and into a league with real selection)? |
 | [006](006_arm_c_kernel_and_inject.md) | Arm C: the kernel + inject | What does "inject retrieved memory into the engine" concretely mean for the pilot, and does arm C beat both the detector (D) and the raw memory (E)? |
+| [007](007_experiment_1b_pre_registration.md) | Experiment 1b: a harder world | 1a failed (k-NN heaven); what pre-registered harder world (nonlinear, noisier, sparser, perturbed recurrence) would let a model beat lookup — decided before it runs? |
 
 ## The one line, so far
 
