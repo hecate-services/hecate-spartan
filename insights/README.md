@@ -27,6 +27,7 @@ explained plainly, we do not understand it well enough yet.
 | [007](007_experiment_1b_pre_registration.md) | Experiment 1b: a harder world | 1a failed (k-NN heaven); what pre-registered harder world (nonlinear, noisier, sparser, perturbed recurrence) would let a model beat lookup — decided before it runs? |
 | [008](008_experiment_1b_result_and_the_arm_f_correction.md) | Experiment 1b: the result, and the arm-F correction | C lost 1b too — but does that kill the *kernel*, or just its *engine*? The missing control (arm F = engine alone) shows the faculties beat their own engine; the deficit is the engine class. |
 | [009](009_experiment_1b_prime_pre_registration.md) | Experiment 1b-prime: fix the contestant, not the world | Same frozen world; give arm C a rule-tuned engine, a strict rule-derived match gate, and a level-including reset — does the kernel now beat lookup? Fable-cleared (round 9) before building. |
+| [010](010_experiment_1b_prime_result_and_the_instrument_failure.md) | Experiment 1b-prime: a first positive, and an instrument failure | Engine+reset finally beat lookup (first C-over-E win) — but a units error in the precision guard gagged inject to 2 firings, so *memory* went untested. Signed partial + pre-registered instrument repair. |
 
 ## The one line, so far
 
