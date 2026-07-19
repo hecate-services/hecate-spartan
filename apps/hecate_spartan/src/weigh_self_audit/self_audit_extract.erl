@@ -19,7 +19,9 @@
 -type usage() :: #{prompt := non_neg_integer(), completion := non_neg_integer(),
                    total := non_neg_integer()}.
 
--define(MAX_TOKENS, 1500).
+%% With reasoning_effort=low the JSON output is short (~a few hundred tokens); this
+%% is generous headroom while keeping per-call token volume low (free-tier TPM).
+-define(MAX_TOKENS, 2000).
 
 %% @doc Extract fields for one item on one arm. Returns the fields, the summed
 %% token usage, and the number of LLM calls (1 or 2; a retry would raise it).
@@ -86,18 +88,55 @@ verify_system() ->
 
 %% --- the pinned call ---
 
+%% A pinned temperature-0 call. To run at scale on rate-limited free tiers, it
+%% retries on 429 / 5xx / transport errors, rotating across the provider's keys
+%% (shuffled per call to spread first attempts) with a short backoff. The MODEL is
+%% pinned throughout; only the account rotates. A retried success's tokens count in
+%% the ledger; a 429 yields no tokens (insight 014 void condition on retries).
 -spec call(string(), [map()]) -> {ok, binary(), usage()} | {error, term()}.
 call(Provider, Messages) ->
-    do_call(spartan_mind_llm:provider_config(Provider), Messages).
+    dispatch(spartan_mind_llm:provider_config(Provider), Messages).
 
-do_call(undefined, _Messages) -> {error, unknown_provider};
-do_call(Config, Messages) ->
-    Body = jsx:encode(#{<<"model">> => maps:get(model, Config),
-                        <<"temperature">> => 0,
-                        <<"max_tokens">> => maps:get(max_tokens, Config, ?MAX_TOKENS),
-                        <<"messages">> => Messages}),
-    Req = {maps:get(url, Config), auth_headers(Config), "application/json", Body},
+dispatch(undefined, _Messages) -> {error, unknown_provider};
+dispatch(Config, Messages) ->
+    attempt(Config, Messages, shuffle(keys_of(Config)), 5).
+
+attempt(_Config, _Messages, _Keys, 0) -> {error, exhausted};
+attempt(Config, Messages, [Key | Rest], Left) ->
+    handle(do_call(Config, Messages, Key), Config, Messages, Rest ++ [Key], Left).
+
+handle({error, {http, 429, _}}, C, M, Keys, Left)          -> retry(C, M, Keys, Left);
+handle({error, {http, Code, _}}, C, M, Keys, Left) when Code >= 500 -> retry(C, M, Keys, Left);
+handle({error, {httpc, _}}, C, M, Keys, Left)              -> retry(C, M, Keys, Left);
+handle(Result, _C, _M, _Keys, _Left)                       -> Result.
+
+retry(Config, Messages, Keys, Left) ->
+    timer:sleep(1000 * (6 - Left)),
+    attempt(Config, Messages, Keys, Left - 1).
+
+do_call(undefined, _Messages, _Key) -> {error, unknown_provider};
+do_call(Config, Messages, Key) ->
+    Model = maps:get(model, Config),
+    Base = #{<<"model">> => Model, <<"temperature">> => 0,
+             <<"max_tokens">> => maps:get(max_tokens, Config, ?MAX_TOKENS),
+             <<"messages">> => Messages},
+    Body = jsx:encode(reasoning(Model, Base)),
+    Req = {maps:get(url, Config), header(Key), "application/json", Body},
     post(Req, maps:get(timeout, Config, 120000)).
+
+header(none) -> [];
+header(Key)  -> [{"Authorization", "Bearer " ++ Key}].
+
+%% reasoning_effort=low only for reasoning models (groq gpt-oss): the extraction task
+%% is mechanical, so low effort yields short clean JSON instead of hidden-reasoning
+%% token burn that truncates to empty content and blows free-tier token/min ceilings.
+%% Symmetric across arms, outcome-neutral. Non-reasoning endpoints reject the param,
+%% so it is added only when the model is a reasoning one.
+reasoning(Model, Base) ->
+    add_effort(binary:match(Model, <<"oss">>), Base).
+
+add_effort(nomatch, Base) -> Base;
+add_effort(_Match, Base)  -> Base#{<<"reasoning_effort">> => <<"low">>}.
 
 post(Req, Timeout) ->
     Result = httpc:request(post, Req, [{timeout, Timeout}, {ssl, [{verify, verify_none}]}],
@@ -130,14 +169,18 @@ usage(Json) ->
 uint(N) when is_integer(N), N >= 0 -> N;
 uint(_) -> 0.
 
-auth_headers(#{keyless := true}) -> [];
-auth_headers(#{keyenv := Env}) -> bearer(os:getenv(Env));
-auth_headers(_Config) -> [].
+keys_of(#{keyless := true}) -> [none];
+keys_of(#{keyenv := Env})   -> nonempty(all_keys(os:getenv(Env)));
+keys_of(_Config)            -> [none].
 
-bearer(K) when is_list(K), K =/= "" -> [{"Authorization", "Bearer " ++ first_key(K)}];
-bearer(_) -> [].
+all_keys(false) -> [];
+all_keys("")    -> [];
+all_keys(S)     -> [string:trim(K) || K <- string:tokens(S, ","), string:trim(K) =/= ""].
 
-first_key(K) -> string:trim(hd(string:tokens(K, ","))).
+nonempty([]) -> [none];
+nonempty(L)  -> L.
+
+shuffle(L) -> [X || {_, X} <- lists:sort([{rand:uniform(), E} || E <- L])].
 
 %% --- response -> fields ---
 
