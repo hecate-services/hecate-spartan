@@ -28,13 +28,16 @@ explained plainly, we do not understand it well enough yet.
 | [008](008_experiment_1b_result_and_the_arm_f_correction.md) | Experiment 1b: the result, and the arm-F correction | C lost 1b too — but does that kill the *kernel*, or just its *engine*? The missing control (arm F = engine alone) shows the faculties beat their own engine; the deficit is the engine class. |
 | [009](009_experiment_1b_prime_pre_registration.md) | Experiment 1b-prime: fix the contestant, not the world | Same frozen world; give arm C a rule-tuned engine, a strict rule-derived match gate, and a level-including reset — does the kernel now beat lookup? Fable-cleared (round 9) before building. |
 | [010](010_experiment_1b_prime_result_and_the_instrument_failure.md) | Experiment 1b-prime: a first positive, and an instrument failure | Engine+reset finally beat lookup (first C-over-E win) — but a units error in the precision guard gagged inject to 2 firings, so *memory* went untested. Signed partial + pre-registered instrument repair. |
+| [011](011_the_signed_negative_memory_is_falsified.md) | The signed negative: memory is falsified | Repaired, inject fired 507× and added nothing; a 100%-precision oracle is *reliably worse* than engine+reset. Restoration loses to restart under recurrence jitter. Thesis falsified; STOP. |
 
 ## The one line, so far
 
-We now have numbers that could go up, and a signed result that they did not — yet.
-The kernel loses to raw lookup on both worlds (1a, 1b), but arm F (the engine alone)
-shows the kernel faculties reliably beat *their own engine*: the deficit is the
-engine class, not the machinery. The next question (1b-prime) is whether fixing the
-engine and the match gate, in the same frozen world, grows that hair's-breadth
-advantage into a real one — so the Spartan thesis (a sovereign kernel that improves
-behaviour over time, on a swappable engine) stays an experiment, not a vibe.
+It is settled, and signed (note 011). We built the number the Spartan thesis needed,
+red-teamed the apparatus through eleven adversarial rounds, and the number came back:
+**forget faster, don't remember harder.** A competent online engine that resets on a
+detected shift beats nearest-neighbour lookup over the same experience (the surviving
+positive); episodic memory *replay* adds nothing — not at its designed precision, not
+with a 100%-precision oracle, because canonical exemplars go stale under recurrence
+drift and restoration loses to restart. The kernel-memory/inject thesis is falsified
+for numerical prediction in the pre-registered world class. Detection and forgetting
+earn their keep; memory does not. The honest next move is STOP, not a shopped world.
