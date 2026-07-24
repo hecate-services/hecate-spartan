@@ -83,8 +83,20 @@
 %% model are deployment facts, so both are env-driven; the default names an
 %% explicit version rather than a moving `latest' tag, because a pin that drifts
 %% is not a pin. CPU inference is slow, so it gets its own long patience.
+%%
+%% MODEL CHOICE, decided before any scoring and on instrument grounds only.
+%% M1 asks for strict JSON, and one of its four field classes is `quote', so most
+%% real source items contain double quotes. Measured on the same article, twice
+%% each: mistral:7b-instruct-v0.3 emitted unparseable JSON 2/2 (it does not escape
+%% quotes inside strings), qwen2.5:7b-instruct parsed 2/2 and returned BYTE-
+%% IDENTICAL token counts across runs at temperature 0. That matters beyond taste:
+%% insight 014 blocks signing on a differential parse-failure rate above 5 points,
+%% and `draft_verify' makes two calls to `single_pass''s one, so it gets two
+%% chances to emit bad JSON. An unreliable formatter biases the run structurally
+%% against the arm under test. Picking the reliable formatter up front is
+%% qualification; changing it after seeing scores would be shopping.
 -define(LOCAL_URL_DEFAULT, "http://127.0.0.1:11434/v1/chat/completions").
--define(LOCAL_MODEL_DEFAULT, <<"mistral:7b-instruct-v0.3-q4_K_M">>).
+-define(LOCAL_MODEL_DEFAULT, <<"qwen2.5:7b-instruct-q4_K_M">>).
 -define(LOCAL_TIMEOUT_MS, 600000).
 
 -define(TIMEOUT_MS, 120000).
