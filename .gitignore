@@ -17,6 +17,10 @@ dist/
 .spartan_mesh.json
 client/**/.spartan_mesh.json
 
+# Melious correspondence and meeting material: private commercial content
+# (findings about a third party's product, plus a proposal). This repo is public.
+docs/melious-*
+
 # python bytecode cache
 __pycache__/
 *.pyc
