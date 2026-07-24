@@ -306,15 +306,39 @@ platform work on the critical path.
 
 ### Step 1 — Ledger and M1
 
-**Defect 4.** `spartan_mind_llm.erl:333-337` captures totals only. Parse
-prompt/completion/cached for every provider shape, add wall-clock, write
-`inference_metered_v1` per attempt including retries and failures.
-*Verification:* fixture usage objects per provider assert every field populated;
-a 3-retry call writes 3 records. *Side effect:* the token clock stops stalling.
+**Defect 4 — DONE.** Scoped strictly to what insight 014 names as ledger
+requirements, nothing more.
 
-Then build and run M1 exactly as insight 014 froze it. Do not add arms. The
-evidence-only-verify idea is a **separate** pre-registration (M2), never an edit
-to a cleared spec.
+M1 does not use the production carousel: `self_audit_extract:call/2` is its own
+pinned temperature-0 client, borrowing only `provider_config/1`. So the ledger
+work landed there, and separately in the production client for the token clock.
+
+| 014 requirement | Was | Now |
+|---|---|---|
+| prompt + completion tokens | captured | captured, and `total` falls back to the parts when a provider omits the sum |
+| **wall-clock per item** | absent | `elapsed_ms`, spanning the whole call including every retry and backoff sleep |
+| **retries counted** (void condition) | absent, and the module's own doc comment falsely claimed a retry raised the call count | `retries`, threaded through the key-rotation loop |
+| **model/stack change mid-run → void** | could not fire; no row carried the model | `model` on every row; `self_audit_assay:model_stable/1` across calibration and confirmatory slices, folded into `void` and `pass` |
+
+Added beyond 014, deliberately: `cached` tokens, parsed from both the OpenAI
+nested shape and the top-level shape brokers use. **Observational only.** No kill
+or void criterion reads it, so it cannot move the verdict. It is recorded because
+a repeated stable prefix is most of an agent's cost, and this is the number that
+evidences it.
+
+Deferred to step 2, correctly: `prompt_hash` and `outcome` were in this plan's
+`inference_metered_v1` sketch but are not named by 014, and there is no journal to
+write records to yet.
+
+*Verified:* 199 eunit green, elvis clean, no new dialyzer warnings (the two in
+`self_audit_extract` are pre-existing dead clauses, present at HEAD). Measured
+delta on the token clock: a provider reporting parts but no total previously
+yielded **0**, now yields **1000**, so scheduled self-alerts no longer freeze.
+
+**Still blocked, and not by code:** running M1 needs a pinned un-rate-limited
+endpoint and the real frozen corpus. Both are RUN prerequisites, unchanged. When
+it runs, use insight 014 exactly as frozen. The evidence-only-verify idea is a
+**separate** pre-registration (M2), never an edit to a cleared spec.
 
 ### Step 2 — Journal
 
@@ -399,7 +423,7 @@ Tests that must exist and must fail before their fix:
 
 | Test | Step | Currently |
 |---|---|---|
-| ledger fields populated per provider fixture | 1 | fails, totals only |
+| ledger fields populated per provider fixture | 1 | **done**, `self_audit_ledger_tests` + `mind_usage_tests` |
 | 8 sentinels survive consolidation with backends dark | 2 | fails |
 | N stimuli in one cooldown window all reach the chronicle | 2 | fails, yields 0 |
 | Soul recoverable to a prior version | 2 | fails, no history exists |

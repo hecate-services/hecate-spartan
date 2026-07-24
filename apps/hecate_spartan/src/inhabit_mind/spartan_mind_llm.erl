@@ -38,6 +38,8 @@
 -export([reason/2, reason_messages/1, reason_messages/2]).
 -export([reason_tools/2, reason_tools/3, interpret_message/1, gemini_interpret/1]).
 -export([provider_labels/0, provider_config/1]).
+%% Usage parsing, exported for testing: the mind's token clock rides on it.
+-export([openai_tokens/1, gemini_tokens/1]).
 
 -define(MELIOUS_URL, "https://api.melious.ai/v1/chat/completions").
 %% Env-driven (HECATE-side MELIOUS_MODEL) so the melious model can be A/B'd
@@ -330,11 +332,20 @@ openai_parse(Resp) ->
         {error, bad_response}
     end.
 
+%% The mind's token clock (self_alerts counts down against tokens thought, not
+%% seconds) advances by this number. A provider that omits total_tokens used to
+%% yield 0, which silently froze every scheduled self-alert; fall back to
+%% prompt+completion so the clock keeps moving.
 openai_tokens(Json) ->
-    case maps:get(<<"usage">>, Json, undefined) of
-        #{<<"total_tokens">> := T} when is_integer(T) -> T;
-        _NoUsage                                      -> 0
-    end.
+    openai_usage(maps:get(<<"usage">>, Json, undefined)).
+
+openai_usage(#{<<"total_tokens">> := T}) when is_integer(T) ->
+    T;
+openai_usage(#{<<"prompt_tokens">> := P, <<"completion_tokens">> := C})
+  when is_integer(P), is_integer(C) ->
+    P + C;
+openai_usage(_NoUsage) ->
+    0.
 
 %% @doc Split an OpenAI-style message into private text and tool calls. Exported
 %% for testing the protocol without a live backend.
@@ -425,10 +436,15 @@ gemini_interpret(Parts) ->
     {string:trim(iolist_to_binary(lists:join(<<" ">>, Texts))), Calls}.
 
 gemini_tokens(Json) ->
-    case maps:get(<<"usageMetadata">>, Json, undefined) of
-        #{<<"totalTokenCount">> := T} when is_integer(T) -> T;
-        _NoUsage                                         -> 0
-    end.
+    gemini_usage(maps:get(<<"usageMetadata">>, Json, undefined)).
+
+gemini_usage(#{<<"totalTokenCount">> := T}) when is_integer(T) ->
+    T;
+gemini_usage(#{<<"promptTokenCount">> := P, <<"candidatesTokenCount">> := C})
+  when is_integer(P), is_integer(C) ->
+    P + C;
+gemini_usage(_NoUsage) ->
+    0.
 
 %% ===================================================================
 %% Shared helpers
