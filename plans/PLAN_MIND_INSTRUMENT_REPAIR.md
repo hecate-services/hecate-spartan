@@ -1,0 +1,301 @@
+# PLAN — Mind instrument repair
+
+**Status:** Draft 2, DESIGN-gated
+**Owner:** Raf
+**Companion:** [`PLAN_HECATE_SPARTAN.md`](PLAN_HECATE_SPARTAN.md) (stale, Appendix B),
+[`../docs/PLAN_RIP_ES.md`](../docs/PLAN_RIP_ES.md),
+[`../insights/README.md`](../insights/README.md)
+
+Seven defects were found in `inhabit_mind` by two independent code studies. This
+plan fixes them, and orders the work so that **nothing precedes the programme's
+one cleared experiment**.
+
+---
+
+## 1. Where the defects come from
+
+They are not seven independent bugs, and they are **not** a silent regression.
+
+On 2026-07-17, event sourcing was removed from this repo deliberately, in five
+atomic always-green commits, to a written goal: *"a store-free, mesh-native
+mind"* ([`docs/PLAN_RIP_ES.md`](../docs/PLAN_RIP_ES.md)). The rationale was
+specific and good. `soul_area.erl:8-16` records it: single-writer-per-area makes
+`wrong_expected_version` — a failure the event-sourced Soul actually threw —
+impossible by construction, and gives per-faculty self-healing.
+
+That decision achieved its goal. What it did not do was **replace the loss-safety
+the store had been providing incidentally.** Every durable thing a mind owns is
+now a file rewritten in place:
+
+| Evidence | Consequence |
+|---|---|
+| `memory_store:trim/2` rewrites the tier file with fewer entries | Defect 2: consolidation can destroy the record |
+| No cheap place to record an unreasoned event | Defect 3: skipped stimuli vanish |
+| `soul_area.erl:73`, `soul.erl:184` write files with no history | Defect 7: one bad self-edit is unrecoverable |
+| No per-call record anywhere | Defect 4: insight 014 has nowhere to put a cost ledger |
+
+So the substrate work in this plan is not a reversal of PLAN_RIP_ES. It is the
+part of that plan that was left unpriced.
+
+Defects 1 (charter render), 5 (injection holes) and 6 (blocking `evolve`) are
+ordinary bugs, unrelated to any of this, fixable in parallel.
+
+---
+
+## 2. Design decisions
+
+### D1 — A per-mind append-only journal. Not evoq.
+
+**Rejected: re-adopting reckon_db/evoq.** It would reverse a one-week-old
+executed decision without answering its rationale, and it would put the open
+`hecate_om` boot-ordering bug (store catch-up replays before projections
+register) on the critical path of a defect repair. A repair plan whose
+prerequisite is fixing a platform bug in another repo is a platform project
+wearing a repair plan's clothes.
+
+**Adopted: one append-only journal per mind.** A single file of appended terms,
+written at the end and never rewritten, fsynced. STM, CMO, MSO and the Soul
+render become **in-memory caches rebuilt from the journal at boot**. `trim`
+becomes a cache-window operation.
+
+This buys the entire structural guarantee that matters: **destructive loss is not
+a bug you fix, it is a state you cannot express**, because nothing writes anywhere
+but the end. Roughly 150-200 lines, zero new dependencies, zero cross-repo risk.
+
+It also preserves every property PLAN_RIP_ES was protecting:
+
+| PLAN_RIP_ES property | Preserved? |
+|---|---|
+| Store-free (no reckon-db, no evoq) | Yes |
+| Mesh-native | Yes, untouched |
+| Single writer per mind | Yes |
+| `wrong_expected_version` impossible | Yes — append-only, no expected-version check |
+| Per-faculty self-healing | Yes — caches rebuild from the journal |
+
+What evoq would additionally buy (command validation, multi-consumer
+projections, versioned replay tooling) is not needed here: every mind is
+single-writer by construction, and there are no second consumers of mind events.
+
+**Journal vocabulary.** These are *observations of what happened*, never
+mechanisms for how memory should work:
+
+| Record | Written when | Carries |
+|---|---|---|
+| `stimulus_received_v1` | any external signal reaches the mind, reasoned or not | sanitized text, source, topic |
+| `stimulus_declined_v1` | the engagement gate skips it | reason: `busy` / `cooldown` / `own_speech` |
+| `turn_taken_v1` | the mind reasons | heard, thought, tool calls |
+| `inference_metered_v1` | every LLM attempt, including failures and retries | see below |
+| `gist_formed_v1` | a CMO or MSO is successfully reflected | tier, **the gist text**, covered span |
+| `charter_amended_v1` and the other self-authorship records | a self-authorship tool fires | as today's tool args |
+
+`gist_formed_v1` must carry the gist text: it is LLM output and is not
+reproducible by replay.
+
+**Deliberately excluded: `memory_superseded_v1`.** Supersession is the mechanism
+that experiment P7 exists to test, and P7's kill criterion is precisely "if
+supersedes-links do not cut stale-surfacing, do not add the knob". Baking it into
+the substrate before the measurement is the fix preceding the test.
+
+#### D1.1 — `inference_metered_v1` is the cost ledger
+
+```
+provider, model, model_version, prompt_hash,
+prompt_tokens, completion_tokens, cached_tokens, total_tokens,
+latency_ms, attempt, outcome
+```
+
+Exactly what insight 014 requires, plus what the assay protocol requires (the
+transcript is the record, because the run is not re-derivable). One record closes
+defect 4, unblocks M1, fixes the `self_alerts` token-clock stall (usage absent
+currently parses to 0), and produces the `cached_tokens` evidence already being
+raised with the inference provider.
+
+**Justification discipline:** the journal is justified on loss-safety and
+auditability, which are mechanical claims. It is **not** claimed to improve the
+mind's continuity or identity. That claim would be unfalsifiable and is out.
+
+### D2 — Vector path: deferred, gated on P6
+
+**The apparent conflict between org rules is false.** Insight 012's "external"
+means external to the **engine**, not external to the process: 011's kill
+mechanism is history mutating the working machinery, and a queried in-process
+store mutates nothing. `mind_memory` already satisfies 012. The commons that 012
+points at is the *shared* corpus, which is hecate-rag's job. A mind's *private*
+long-term memory over mesh RPC would add a network dependency to every recall and
+couple experiment reproducibility to a running service, which is hostile to P6
+and P7. So: in-process for private LTM, hecate-rag for the commons.
+`prefer_architectural_correctness` and 012 agree once the two stores are
+distinguished.
+
+**But the decision is not taken now.** P6's pre-registered kill can delete the
+semantic path outright. Swapping `mind_memory`'s hand-rolled cosine for
+`hecate_vector` before that number exists would change the measured object and
+pre-spend infrastructure on a possibly-condemned path. Run P6 against the
+incumbent; O(n) cosine at probe-corpus scale is not a validity threat.
+
+### D3 — Instrumentation, applied strictly
+
+Instrumentation is *anything whose absence makes a registered measurement wrong
+or impossible*. Applied strictly to the measurements that actually exist:
+
+- M1 is a standalone extraction eval. It touches no Soul and no stimulus path.
+- P6 and P7 use constructed probe corpora, not lived turns.
+- There is no registered live-mind measurement; the society is decommissioned.
+
+**Therefore instrumentation is: the ledger fields, the M1 checker/corpus/runner
+per frozen 014, and the P6/P7 probe instruments. Nothing else.** Charter render
+and dropped stimuli are repairs, not instrumentation — an earlier draft of this
+plan put them in the instrumentation phase and failed its own rule.
+
+**Forward-declared dependency:** if a future experiment measures lived recall over
+a mind's own history, defect 3 (dropped stimuli) becomes instrumentation for it,
+because the chronicle would be a biased sample. Declare that when such an
+experiment is registered, not before.
+
+---
+
+## 3. Ordering
+
+Nothing precedes M1. It is the programme's only cleared experiment.
+
+| Step | Work | Gates what |
+|---|---|---|
+| **1** | Ledger fields (defect 4) + M1 build per frozen 014 → **run M1** | nothing may precede; the spec is not touched |
+| **2** | Journal + never-trim-without-archive (defects 2, 3, 7) | pure repair, deterministic tests, corrupts no experiment |
+| **3** | P6 probe instrument → run against the **incumbent** retriever | D2 |
+| **4** | D2 decision, gated on P6 (pass → `hecate_vector` in-process; fail → delete the semantic path and the decision dissolves) | |
+| **5** | P7 staleness → only then any supersession mechanism, and only on a P7 pass | |
+| **∥** | Defects 1, 5, 6 in parallel with 3-5 | they gate nothing |
+
+Wrong-measurement traps avoided by this order: D2 before P6 would measure the
+replacement rather than the incumbent; `memory_superseded_v1` before P7 is the fix
+preceding the test; any `hecate_om` work bundled ahead of M1 puts unbounded
+platform work on the critical path.
+
+---
+
+## 4. Work packages
+
+### Step 1 — Ledger and M1
+
+**Defect 4.** `spartan_mind_llm.erl:333-337` captures totals only. Parse
+prompt/completion/cached for every provider shape, add wall-clock, write
+`inference_metered_v1` per attempt including retries and failures.
+*Verification:* fixture usage objects per provider assert every field populated;
+a 3-retry call writes 3 records. *Side effect:* the token clock stops stalling.
+
+Then build and run M1 exactly as insight 014 froze it. Do not add arms. The
+evidence-only-verify idea is a **separate** pre-registration (M2), never an edit
+to a cleared spec.
+
+### Step 2 — Journal
+
+**Defect 2.** `sleep_cycle.erl:63-71` trims STM whether or not `reflect` reached
+an LLM; `memory_store:trim/2` hard-deletes. Fix: no `gist_formed_v1`, no window
+advance; retry on a later nudge with a cooldown (Gene's abort-and-retry,
+`spartan.py:2398-2406`). Tiers are caches, so nothing is deleted.
+*Verification:* backends dark, plant 8 sentinel facts, nudge, assert all 8
+recoverable from the journal.
+
+**Defect 3.** `spartan_mind.erl:282-299` discards on busy or cooldown;
+`observe_memory` runs only for reasoned turns (`:502-510`). Fix: always write
+`stimulus_received_v1`; on skip also write `stimulus_declined_v1{reason}`.
+*Verification:* fire N facts inside one cooldown window, assert the next context
+chronicle contains all N. Currently 0.
+
+**Defect 7.** No Soul history. Fix: Soul writes append to the journal; the
+`soul_area` file stays as the cache. Add `soul:at_version/2`. Single-writer and
+self-healing are preserved, and `wrong_expected_version` cannot return.
+*Verification:* destructive revision, then recover the prior version.
+
+### Parallel — ordinary bugs
+
+**Defect 1, charter black hole.** `soul.erl:91-94` appends; `context_assembler.erl:179`
+renders `clip_head(?CHARTER_MAX=2000)`. Past 2000 graphemes every amendment is
+written, acknowledged, and never rendered. Same class: addendum `clip_tail(?ADDENDUM_MAX=1200)`
+at `:148`, Knowledge Map `?KMAP_MAX=1200`. Fix: render founding head **plus**
+recent tail with an explicit elision marker; surface an overflow flag in the HUD.
+*Verification:* grow charter past 2000, amend, assert the amendment appears in
+rendered context.
+
+**Defect 5, injection holes.** The `EXTERNAL>>>` sentinel is not neutralized
+inside the body, so untrusted text can close its own envelope; and Gene's actual
+defusal (`<|token|>` → `#[token]#`, `spartan.py:292`) is absent. Fix both.
+*Verification:* property test — defused output contains exactly one closing marker
+and no `<|...|>` sequence. **Scope:** this hardens the frame and claims nothing
+about model compliance. That is experiment S3's job.
+
+**Defect 6, blocking `evolve`.** `spartan_mind.erl:471-482` runs an LLM call with
+the full 6-attempt retry schedule inside the mind's `gen_server`. Fix:
+`spawn_monitor`, as reasoning already does at `:229`.
+*Verification:* `timer:tc` — the mind answers a stimulus while `evolve` is in flight.
+
+---
+
+## 5. Sibling-repo checks (must be pinned in the P6 pre-registration)
+
+| Check | Why it is a validity threat |
+|---|---|
+| **Embed prefix convention.** `embedder.erl:88-90` hardcodes nomic's `search_query:` / `search_document:`. `hecate-embed` ships an e5-family model whose convention is `query:` / `passage:`, and may apply prefixes service-side | A mismatch or double-prefix silently degrades P6's semantic arm. Pin model **and** prefix in the pre-reg |
+| **Similarity metric.** `mind_memory` is cosine; `hecate_vector` may be L2, normalized or not | A metric change reorders results. Whatever P6 freezes must be what production runs |
+| **Embedder liveness.** With the fleet decommissioned, is `io.hecate.embed` advertised anywhere? | If not, `macula:call` waits out its 8 s timeout (`embedder.erl:20,54-55`) on **every** remember and recall before falling back to HTTP. Measure once; if confirmed, flip mesh-first to fallback until a mesh embedder exists. This is a live performance bug, not just a P6 concern |
+| **hecate-rag collection semantics** | Only if D2 ever revisits the commons path. Check before, not after |
+
+---
+
+## 6. Verification ledger
+
+Tests that must exist and must fail before their fix:
+
+| Test | Step | Currently |
+|---|---|---|
+| ledger fields populated per provider fixture | 1 | fails, totals only |
+| 8 sentinels survive consolidation with backends dark | 2 | fails |
+| N stimuli in one cooldown window all reach the chronicle | 2 | fails, yields 0 |
+| Soul recoverable to a prior version | 2 | fails, no history exists |
+| charter amendment past 2000 graphemes reaches context | ∥ | fails |
+| defused output has one closing marker, no control tokens | ∥ | fails |
+| mind responds during `evolve` | ∥ | fails |
+
+---
+
+## 7. Out of scope
+
+- Reviving the decommissioned society.
+- Re-adopting evoq anywhere, including the mesh-service slices.
+- Fixing the `hecate_om` boot-ordering bug. Real, still open, tracked separately.
+  Deliberately off this plan's critical path.
+- Committee redesign. The current implementation is the structure insight 001
+  diagnosed, but no consumer exists; do not build ahead of a use.
+- World tools. Omitted by design.
+- Salience-gated consolidation. An experiment needing a kill threshold, not a repair.
+
+---
+
+## Appendix A — Provenance
+
+Two independent studies of `inhabit_mind` and Gene Sher's Python original, run in
+parallel without shared conclusions. Four findings converged (destructive
+consolidation, CMO/MSO never reaching the semantic store, no deliberate retrieve
+or forget, weak defusal). The charter black hole, dropped stimuli, blocking
+`evolve` and the ledger gap came from the independent review alone.
+
+Draft 1 of this plan proposed re-adopting evoq, classified charter render and
+dropped stimuli as instrumentation, and included a `memory_superseded_v1` record.
+The DESIGN gate rejected all three: evoq is over-engineered for a guarantee an
+append-only journal delivers with no cross-repo risk; the instrumentation
+classification failed the plan's own stated rule; and the supersession record was
+a mechanism built ahead of the experiment that decides whether it is needed.
+
+## Appendix B — Documentation drift found while planning
+
+- `plans/PLAN_HECATE_SPARTAN.md` states "Store: `hecate_spartan_store`
+  (reckon-db), auto-wired by `hecate_om:boot/1`". False since 2026-07-17.
+- `rebar.config` claims long-term memory is "lexical and in-process now".
+  Misleading: `embedder.erl` is mesh-first with an Ollama fallback and
+  `embed_enabled` defaults true. The semantic path is live whenever an embedder
+  is reachable.
+- `README.md` credit audit found three overclaims against Gene's work: A-Mem
+  linking (only link selection is ported, not keyword, context, or candidate
+  evolution), drones (committees are a different mechanism), and poison defusal
+  (the one defusal Gene actually performs is the one absent).
