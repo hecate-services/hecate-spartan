@@ -22,6 +22,7 @@
 -module(mind_memory).
 
 -export([open/1, open/2, remember/2, recall/3, seed/2, size/1, save/1, evolve/2]).
+-export([comparable/2]).
 
 %% A new memory links to at most this many nearest neighbours, each above the
 %% similarity threshold; recall follows those links one hop out from a seed hit.
@@ -118,9 +119,27 @@ recall(_Mem, _Query, _K) ->
     [].
 
 retrieve({ok, QVec}, Es, Query, K) ->
-    semantic(vectored(Es), QVec, Es, Query, K);
+    semantic(comparable(QVec, vectored(Es)), QVec, Es, Query, K);
 retrieve(error, Es, Query, K) ->
     lexical(Es, Query, K).
+
+%% @doc Only vectors of the SAME width are comparable. Exported for testing.
+%%
+%% The mind is mesh-FIRST for embeddings and falls back to a local HTTP embedder
+%% per call, so one store can legitimately hold vectors from two different models
+%% of two different widths. `cosine/2' answers 0.0 for a width mismatch, which is
+%% the dangerous part: without this filter a mismatched query scores EVERY memory
+%% 0.0, and `topn/2' then hands back an arbitrary K as though they were the
+%% nearest. The mind would be told its most relevant memories are whichever ones
+%% happened to sort first, and nothing anywhere would say so.
+%%
+%% Filtering to the comparable set means a query embedded by a different model
+%% finds no comparable memories and `semantic/5' degrades to lexical, which is a
+%% real answer. Degrading to cosine-zero is garbage wearing an answer's clothes.
+-spec comparable([float()], [map()]) -> [map()].
+comparable(QVec, Vectored) ->
+    Width = length(QVec),
+    [E || E <- Vectored, length(maps:get(vec, E)) =:= Width].
 
 %% Nothing embedded yet -> lexical; otherwise cosine seeds, follow their links one
 %% hop, and re-rank the union by similarity to the query.

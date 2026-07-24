@@ -112,12 +112,20 @@ Read off the running deployment rather than inferred:
   hardcodes nothing;
 - similarity: cosine over unnormalised vectors (`mind_memory:cosine/2`).
 
-**Instrument fix required before any run:** delete the HTTP fallback in
-`embedder.erl`. The nomic `search_query:` / `search_document:` prefixes at
-`:88-90` live only on that path, and `prefer_mesh/3` falls back **per call**, so a
-single run could mix conventions non-deterministically. Deleting the path removes
-the hardcoded convention, the mixing, and the 8-second timeout that ends in a
-silent answer from a different model, in one change.
+**The HTTP fallback stays** (operator decision): a mind should not lose semantic
+recall because the mesh hiccuped. So the experiment handles it by **voiding**, not
+by amputation. Any probe whose embedding was not served by the pinned mesh path
+voids the run.
+
+Keeping it surfaced a real production bug, now fixed (defect 10). `prefer_mesh/3`
+falls back **per call**, so one store can hold vectors from two models of two
+widths, and `cosine/2` answers `0.0` on a width mismatch. A mismatched query
+therefore scored *every* memory `0.0`, and `topn/2` returned an arbitrary K as
+though they were the nearest: the mind told its most relevant memories are
+whichever ones sorted first, silently, exactly when the fallback was doing its
+job. `mind_memory:comparable/2` now filters recall to same-width vectors, so a
+query from a different model finds nothing comparable and degrades to lexical,
+which is a real answer.
 
 ## Why this is blocked on data
 

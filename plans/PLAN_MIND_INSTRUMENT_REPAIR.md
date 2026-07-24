@@ -486,6 +486,32 @@ candidates from outside the global top-K). K2 is re-registered against the
 repaired object afterwards. If the embedder dies at K1, chains and `evolve/2` die
 with it and the question dissolves.
 
+## 4c. Defect 10 — a mixed-width store silently returns arbitrary recalls (FIXED)
+
+The mind is mesh-first for embeddings and `prefer_mesh/3` falls back to a local
+HTTP embedder **per call**. So one store can legitimately hold vectors from two
+models of two different widths: the mesh service serves 384-dim fastembed, and a
+local fallback model need not.
+
+`mind_memory:cosine/2` answers `0.0` on a width mismatch. Without a comparability
+filter, a mismatched query scored **every** memory `0.0`, and `topn/2` then
+returned an arbitrary K as though they were the nearest. The mind was handed
+whichever memories sorted first and told they were its most relevant, with nothing
+anywhere reporting it.
+
+Worse than returning nothing, and it fires **precisely when the fallback is doing
+its job**, which is when a mind most needs its memory to behave.
+
+Same class as the `(unreflected)` sleep-cycle fallback and faber insight 002:
+silent fallbacks hide correctness, not just speed. And the same fix shape: make
+the degradation honest rather than remove the resilience. `comparable/2` filters
+recall to same-width vectors, so a query embedded by a different model finds
+nothing comparable and `semantic/5` degrades to lexical, which is a real answer.
+
+The HTTP fallback itself **stays**, by operator decision: a mind should not lose
+semantic recall because the mesh hiccuped. Deleting it was the wrong fix; making
+it not poison recall was the right one.
+
 ## 5. Sibling-repo checks (must be pinned in the P6 pre-registration)
 
 **Transport is the mesh. Settled, and not open for re-litigation.** `hecate-embedder`
