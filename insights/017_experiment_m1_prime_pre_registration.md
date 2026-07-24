@@ -1,6 +1,14 @@
 # 017 — Experiment M1′: self-audit economics, re-registered (pre-registration)
 
-**Status: DRAFT 2, DESIGN-gated (Fable REJECTED draft 1), not built.** Programme S2.
+**Status: SUPERSEDED by [018](018_self_audit_fails_l2_a_bound_beats_a_rerun.md) —
+run-plan NOT built.** The DESIGN gate on this repaired instrument concluded that a
+re-run was unnecessary: the L2-fail *direction* is signable from the 016 run under a
+defect-robust worst-case bound (018), so no fresh corpus was harvested. This note is
+retained as the record of the design that a bound made moot, and its fix 1 / fix 2
+stay on the shelf for any future experiment that needs a *measured* L2 rather than a
+bounded direction.
+
+**Status when live: DRAFT 2, DESIGN-gated (Fable REJECTED draft 1), not built.** Programme S2.
 Supersedes the *run* of
 [014](014_experiment_m1_self_audit_economics_pre_registration.md), not its
 question or its kill criteria. [016](016_experiment_m1_result_an_instrument_failure.md)
