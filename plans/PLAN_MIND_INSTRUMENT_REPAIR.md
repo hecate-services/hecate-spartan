@@ -447,6 +447,45 @@ either re-births or refuses rather than adopting a partial identity.
 
 ---
 
+## 4b. Defect 9 — chain-following is a no-op, so `evolve/2` is pure cost
+
+Found at the P6 DESIGN gate, before any runner was written. Verified independently
+against `mind_memory.erl:127-147`.
+
+```
+Seeds    = topn(cosine over Vectored, K)     %% the GLOBAL top-K
+Expanded = Seeds ∪ links(Seeds), filtered to vectored entries   %% Seeds ⊆ Expanded ⊆ Vectored
+Ranked   = topn(cosine over Expanded, K)
+```
+
+The top-K of any subset that contains the global top-K **is** the global top-K.
+So `Ranked = Seeds`, for every query, every link set, every K. `follow_chains/2`
+cannot change what `recall/3` returns. It does work and returns the same list.
+
+Consequences:
+
+- **`evolve/2` has no effect on the system.** `links` is written by `link_to/2`
+  and by `commit_links/3`, and read in exactly one place: `follow_chains/2`.
+  Verified by grep. So the LLM call it makes every eight turns is pure cost.
+- The module docstring ("recall → cosine seeds → FOLLOW LINKS → re-rank") is not
+  what the code does.
+- **This nearly produced a fake signed negative.** The draft pre-registration's K2
+  measured chain-gain on gold items not reachable as a seed. Those are exactly the
+  items the re-rank discards. K2 was guaranteed to fail at any N, and would have
+  read as a clean result about Gene's agentic linking rather than what it is: a
+  code defect wearing an experiment's clothes. This is the "never sign a faculty
+  verdict on a silent faculty" rule from arena rounds 8 and 10, caught one gate
+  earlier this time.
+
+**Sequencing, deliberately not "fix it now".** With chains inert, the `semantic`
+arm reduces to plain cosine top-K, which is exactly what K1 needs in order to
+isolate the embedder. So: leave `recall/3` alone, run K1 against it, and only then
+decide whether a repaired retriever should let links change ranking (a link bonus
+in the re-rank, or seeds drawn by threshold rather than top-K so expansion can add
+candidates from outside the global top-K). K2 is re-registered against the
+repaired object afterwards. If the embedder dies at K1, chains and `evolve/2` die
+with it and the question dissolves.
+
 ## 5. Sibling-repo checks (must be pinned in the P6 pre-registration)
 
 | Check | Why it is a validity threat |
