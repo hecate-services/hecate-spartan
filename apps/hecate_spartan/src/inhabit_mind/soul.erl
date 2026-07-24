@@ -221,12 +221,46 @@ ensure_identity(Dir, Did, BirthMeta) ->
     Path = iolist_to_binary(filename:join(Dir, <<"identity">>)),
     from_disk_or_birth(file:read_file(Path), Path, Did, BirthMeta).
 
-from_disk_or_birth({ok, Bin}, _Path, _Did, _Meta) ->
-    decode_identity(Bin);
+%% DEFECT 8. This wrote with a bare `file:write_file' while its sibling
+%% `soul_area' has `write_atomic', and the read branch below accepted ANY existing
+%% file with no validation. A file torn at birth was therefore adopted as the
+%% mind's identity forever: re-birth never fired, because the file existed.
+%% Validate on read, write atomically, and re-birth from an unusable file.
+from_disk_or_birth({ok, Bin}, Path, Did, Meta) ->
+    adopt(safe_decode(Bin), Path, Did, Meta);
 from_disk_or_birth(_Absent, Path, Did, Meta) ->
+    birth(Path, Did, Meta).
+
+%% A torn file can also make `base64:decode' or `binary_to_integer' throw, which
+%% would take the mind's boot down rather than re-birth it.
+safe_decode(Bin) ->
+    try validate(decode_identity(Bin))
+    catch _:_ -> invalid
+    end.
+
+validate(#{did := D, name := N} = Identity)
+  when is_binary(D), D =/= <<>>, is_binary(N), N =/= <<>> ->
+    {ok, Identity};
+validate(_Partial) ->
+    invalid.
+
+adopt({ok, Identity}, _Path, _Did, _Meta) ->
+    Identity;
+adopt(invalid, Path, Did, Meta) ->
+    logger:warning("[soul] ~ts identity file unusable; re-birthing", [Did]),
+    birth(Path, Did, Meta).
+
+birth(Path, Did, Meta) ->
     Identity = Meta#{did => Did, born_at => erlang:system_time(millisecond)},
-    ok = file:write_file(Path, encode_identity(Identity)),
+    ok = write_atomic(Path, encode_identity(Identity)),
     Identity.
+
+%% The same tmp-then-rename `soul_area' uses: rename is atomic on POSIX, so a
+%% crash mid-write leaves the previous file intact rather than a torn one.
+write_atomic(Path, Bin) ->
+    Tmp = <<Path/binary, ".tmp">>,
+    ok = file:write_file(Tmp, Bin),
+    file:rename(Tmp, Path).
 
 encode_identity(#{did := D, name := N, genesis_version := G,
                   founding_brief := B, born_at := T}) ->

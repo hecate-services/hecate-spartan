@@ -386,7 +386,32 @@ By the same rule that makes the Soul Markdown, a mind's condensed autobiography
 should be readable: write CMO and MSO as Markdown archives beside the Soul.
 *Verification:* after consolidation, the gist is readable with `cat`.
 
-### Parallel — ordinary bugs
+### Parallel — ordinary bugs — DONE
+
+Two findings beyond what the reviews caught:
+
+- **Defect 1 had a second instance.** `philosophy` is appended by
+  `record_philosophy/2` and was rendered `clip_head`, exactly like the charter.
+  Same black hole, same fix. `genesis_addendum` and `knowledge_map` fade from the
+  other end (`clip_tail`), so all four now keep both ends via `clip_ends/2`, with
+  the elision named **in context** rather than in the HUD, so the mind reads
+  inside its own charter that something was elided. Lessons, journal and ideas
+  stay tail-clipped deliberately: they are logs read newest-first, so a new entry
+  is always visible and only old ones fade. A test guards that distinction.
+- **A live crash, pre-existing, found by the new render test.** The Knowledge Map
+  header held a literal em-dash inside a *list* in the iolist `l2/1` passes to
+  `iolist_to_binary`. Codepoints above 255 make that call `badarg`, so **any mind
+  that had ever called `learn` crashed its own context assembly.** Present at
+  HEAD, unrelated to this work, fixed here because the fix is one line on a line
+  already being edited. Two further em-dashes sat inside `<<"...">>` literals in
+  the genesis core and the mission reminder, where Erlang keeps only the low byte,
+  putting a stray `0x14` control character into every prompt. Both replaced.
+
+**Defect 6 has no unit test, deliberately.** The fix is structural (`spawn_monitor`
+instead of an inline call, plus a version guard and a dedicated `DOWN` clause so a
+crashing evolver cannot clear the reasoner's `busy` flag). Testing it properly
+needs a mind-level integration harness that does not exist; a unit test asserting
+`V =:= V` would be theatre. Verified by inspection, and recorded here as the gap.
 
 **Defect 1, charter black hole.** `soul.erl:91-94` appends; `context_assembler.erl:179`
 renders `clip_head(?CHARTER_MAX=2000)`. Past 2000 graphemes every amendment is
@@ -446,10 +471,12 @@ Tests that must exist and must fail before their fix:
 | Soul recoverable to a prior version | 2 | **done**, `soul:prior/2` |
 | a hand-edit to a Soul `.md` survives a restart untouched | 2 | **done**, `a_hand_edit_survives` |
 | a torn journal tail loses only the partial record | 2 | **done**, `a_torn_tail_does_not_lose_earlier_records` |
-| charter amendment past 2000 graphemes reaches context | ∥ | fails |
-| defused output has one closing marker, no control tokens | ∥ | fails |
-| mind responds during `evolve` | ∥ | fails |
-| a torn identity file is refused, not adopted | ∥ | fails, adopted silently |
+| charter amendment past 2000 graphemes reaches context | ∥ | **done**, `context_render_tests` |
+| late philosophy entry reaches context (second instance) | ∥ | **done** |
+| early addendum principle and Knowledge Map title reach context | ∥ | **done** |
+| defused output has one closing marker, no control tokens | ∥ | **done**, `defuse_markers_tests` |
+| a torn identity file is refused, not adopted | ∥ | **done**, `soul_identity_tests` |
+| mind responds during `evolve` | ∥ | **no test**, needs a mind-level harness; fix verified by inspection |
 | a hand-edit to a Soul `.md` survives the next boot untouched | 2 | must not regress |
 
 ---
