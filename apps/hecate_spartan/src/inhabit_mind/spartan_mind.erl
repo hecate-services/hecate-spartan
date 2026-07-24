@@ -78,6 +78,11 @@
              subs = []  :: [reference()],
              memory       :: mind_memory:mem() | undefined,
              since_evolve = 0 :: non_neg_integer(),
+             %% Bumped on every remembered turn. The off-process evolver carries
+             %% the version it started from, so a result computed against a stale
+             %% snapshot is discarded instead of dropping a turn.
+             mem_version = 0 :: non_neg_integer(),
+             evolver      :: pid() | undefined,
              alerts = []  :: [self_alerts:alert()],
              busy = false :: boolean()}).
 
@@ -117,6 +122,14 @@ handle_info({memory_ready, Mem}, #st{name = Name} = St) ->
     logger:info("[spartan_mind] ~ts memory ready (~b recalled)",
                 [Name, mind_memory:size(Mem)]),
     {noreply, St#st{memory = Mem}};
+%% The evolver worked on a SNAPSHOT. If the mind remembered anything while it
+%% ran, applying its result would silently drop that turn, so discard it; the
+%% cadence counter is still high, so it retries on the next turn.
+handle_info({evolved, Mem, V}, #st{mem_version = V} = St) ->
+    _ = persist_ltm(Mem),
+    {noreply, St#st{memory = Mem, since_evolve = 0, evolver = undefined}};
+handle_info({evolved, _Stale, _V}, St) ->
+    {noreply, St#st{evolver = undefined}};
 handle_info({macula_event, _Ref, Topic, Payload, _Meta}, St) ->
     {noreply, on_mesh_event(Topic, Payload, St)};
 handle_info({macula_event_gone, _Ref, _Reason}, St) ->
@@ -144,6 +157,11 @@ handle_info({self_alert, Note}, St) ->
 %% The reasoning process finished normally (it already reported via {reasoned} /
 %% {reasoning_failed}); nothing to do. An ABNORMAL death with `busy' still set is
 %% a crash that never reported — clear busy so the mind does not go deaf forever.
+%% The evolver dying must NOT be mistaken for the reasoner dying: the clauses
+%% below clear `busy', and clearing it because a background evolve crashed would
+%% let a second thought start while the first is still in flight.
+handle_info({'DOWN', _Ref, process, Pid, _Reason}, #st{evolver = Pid} = St) ->
+    {noreply, St#st{evolver = undefined}};
 handle_info({'DOWN', _Ref, process, _Pid, normal}, St) ->
     {noreply, St};
 handle_info({'DOWN', _Ref, process, _Pid, Reason}, #st{name = Name, busy = true} = St) ->
@@ -207,6 +225,8 @@ retry(St) ->
 %% A message reaches the mind; it assembles its full context and reasons about
 %% that message in its own voice. One thought at a time: while a reply is in
 %% flight we ignore new stimulus, so a burst does not start overlapping calls.
+maybe_react(Payload, #st{busy = true} = St) when is_map(Payload) ->
+    react({declined, busy}, Payload, St);
 maybe_react(_Payload, #st{busy = true} = St) ->
     St;
 maybe_react(Payload, St) when is_map(Payload) ->
@@ -228,8 +248,27 @@ react({ok, Message}, Fact, St) ->
     %% so the mind can never wedge deaf-and-busy-forever.
     _ = spawn_monitor(fun() -> run_reasoning(Self, Message, Messages, Tools) end),
     St#st{busy = true, last_reasoned = erlang:system_time(millisecond)};
-react(skip, _Fact, St) ->
+%% Its own post coming back round the agora. Nothing was missed — it already
+%% knows what it said — so note the decline but do not re-observe it.
+react({declined, own_speech}, _Fact, #st{did = Did} = St) ->
+    _ = mind_journal:append(Did, stimulus_declined_v1, #{reason => own_speech}),
+    St;
+%% DEFECT 3. A stimulus the mind was too busy or too recently-woken to reason
+%% about used to vanish entirely: it never entered STM, so the mind's own record
+%% of what it lived through was a biased sample — whatever happened to arrive at a
+%% quiet moment. Gene accumulates every observation whether or not a call fires
+%% (spartan.py:3408-3444). Record it, cheaply, with no LLM.
+react({declined, Reason}, Fact, #st{did = Did} = St) ->
+    _ = mind_journal:append(Did, stimulus_declined_v1, #{reason => Reason}),
+    _ = catch memory:observe(Did, unheard(mget(body, Fact))),
     St.
+
+%% Marked, so that when the mind next reads its recent history it can see this
+%% arrived while it was occupied and was never reasoned about.
+unheard(Body) when is_binary(Body), Body =/= <<>> ->
+    <<"(unreasoned, arrived while occupied) ", (defuse:sanitize(Body))/binary>>;
+unheard(_NotText) ->
+    <<>>.
 
 %% The structured signal a sensor attached to a fact: topic class, who reported it
 %% (country + source type), where it is about. A closed-vocabulary line the mind
@@ -283,20 +322,25 @@ stimulus(Fact, #st{did = Did, last_reasoned = Last}) ->
     decide(Fact, Did, Last, erlang:system_time(millisecond), cooldown_ms()).
 
 %% Pure so it can be tested without a live mind. Exported for that reason.
+%% The decline carries its REASON, because the three cases are not the same thing:
+%% own speech was never missed, an empty body is nothing, but a stimulus declined
+%% on cooldown is real input the mind never saw and must still record.
 -spec decide(map(), binary(), integer(), integer(), integer()) ->
-    {ok, binary()} | skip.
+    {ok, binary()} | {declined, own_speech | cooldown | empty}.
 decide(Fact, MyDid, LastReasoned, Now, Cooldown) ->
     heard(mget(from, Fact) =:= MyDid, Fact, Now - LastReasoned >= Cooldown).
 
 heard(true, _Fact, _Ready) ->
-    skip;
+    {declined, own_speech};
 heard(false, Fact, Ready) ->
     consider(mget(body, Fact), Ready).
 
 consider(Body, true) when is_binary(Body), Body =/= <<>> ->
     {ok, Body};
+consider(Body, false) when is_binary(Body), Body =/= <<>> ->
+    {declined, cooldown};
 consider(_Body, _Ready) ->
-    skip.
+    {declined, empty}.
 
 cooldown_ms() ->
     case os:getenv("HECATE_MIND_COOLDOWN_MS") of
@@ -451,24 +495,35 @@ remember_turn(Heard, Thought, _ToolCalls, Tokens, St) ->
     _ = observe_memory(St#st.did, Heard, Thought),
     Mem0 = remember_turn_in_memory(St#st.memory, Heard, Thought),
     N = St#st.since_evolve + 1,
-    {Mem, Since} = maybe_evolve(N >= ?EVOLVE_EVERY, N, Mem0),
-    _ = persist_ltm(Mem),
+    V = St#st.mem_version + 1,
+    _ = persist_ltm(Mem0),
     St1 = St#st{tokens_used = St#st.tokens_used + Tokens,
                 last_tokens = Tokens,
-                since_evolve = Since,
-                memory = Mem},
-    fire_self_alerts(St1).
+                since_evolve = N,
+                mem_version = V,
+                memory = Mem0},
+    fire_self_alerts(start_evolve(due_to_evolve(N, St1), V, St1)).
 
 %% Cadenced A-Mem evolution: every ?EVOLVE_EVERY remembered turns the LLM re-links
-%% one memory (Gene's agentic linking). Off the per-turn cost path — one small
-%% call per consolidation window. The counter resets only when it actually runs.
-maybe_evolve(false, N, Mem) ->
-    {Mem, N};
-maybe_evolve(true, _N, Mem) ->
-    {evolve_memory(Mem), 0}.
+%% one memory (Gene's agentic linking).
+%%
+%% DEFECT 6: this ran INSIDE the mind's gen_server, with the full six-attempt
+%% retry schedule, so every eighth turn the mind went deaf for the duration of an
+%% extra LLM call — and, before defect 3 was fixed, everything that arrived
+%% meanwhile was discarded rather than queued. It runs off-process now, exactly as
+%% reasoning already does.
+due_to_evolve(N, #st{evolver = undefined, memory = Mem}) ->
+    N >= ?EVOLVE_EVERY andalso Mem =/= undefined;
+due_to_evolve(_N, #st{}) ->
+    false.
 
-evolve_memory(undefined) -> undefined;
-evolve_memory(Mem)       -> mind_memory:evolve(Mem, fun evolve_reason/1).
+start_evolve(false, _V, St) ->
+    St;
+start_evolve(true, V, #st{memory = Mem} = St) ->
+    Self = self(),
+    {Pid, _Ref} = spawn_monitor(
+        fun() -> Self ! {evolved, mind_memory:evolve(Mem, fun evolve_reason/1), V} end),
+    St#st{evolver = Pid}.
 
 evolve_reason(Msgs) -> ok_reply(catch spartan_mind_llm:reason_messages(Msgs)).
 

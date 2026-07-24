@@ -7,21 +7,39 @@
 %%%
 %%% Calls are made to a PINNED provider at temperature 0 (not the production
 %%% carousel, which shuffles providers per call — that would break pairing), reusing
-%%% only spartan_mind_llm:provider_config/1 for URL/model/key. Full usage
-%%% (prompt + completion + total tokens) is captured — the cost ledger insight 014
-%%% demanded; the client's own path exposes only the total.
+%%% only spartan_mind_llm:provider_config/1 for URL/model/key.
+%%%
+%%% THE LEDGER. Insight 014 names three requirements, all captured here:
+%%%   - prompt + completion tokens per item, both arms, from provider usage;
+%%%   - WALL-CLOCK per item — total elapsed for the call including every retry and
+%%%     every backoff sleep, because that is the time the economics actually eats;
+%%%   - RETRIES counted — 014 lists "retries count in the ledger" as a void
+%%%     condition. A 429 yields no tokens but costs real time, so a retry loop is
+%%%     invisible in a token-only ledger.
+%%% `model' travels on every row so 014's "model/stack version change mid-run ->
+%%% void" can actually fire; the assay checks it across the whole run.
+%%% `cached' is OBSERVATIONAL ONLY — no kill or void criterion reads it. It is
+%%% recorded because a broker that reports cached tokens changes what a repeated
+%%% prefix costs, and we want the number.
 -module(self_audit_extract).
 
 -export([extract/3, call/2, parse_fields/1]).
+%% Pure ledger arithmetic, exported so the ledger contract can be tested against
+%% recorded provider usage shapes without a live backend.
+-export([usage/2, sum_usage/2]).
 
 -export_type([usage/0]).
 
 -type usage() :: #{prompt := non_neg_integer(), completion := non_neg_integer(),
-                   total := non_neg_integer()}.
+                   total := non_neg_integer(), cached := non_neg_integer(),
+                   elapsed_ms := non_neg_integer(), retries := non_neg_integer(),
+                   model := binary()}.
 
 %% With reasoning_effort=low the JSON output is short (~a few hundred tokens); this
 %% is generous headroom while keeping per-call token volume low (free-tier TPM).
 -define(MAX_TOKENS, 2000).
+%% Key-rotation budget for one call. Backoff is 1s, 2s, 3s, 4s between attempts.
+-define(MAX_ATTEMPTS, 5).
 
 %% @doc Extract fields for one item on one arm. Returns the fields, the summed
 %% token usage, and the number of LLM calls (1 or 2; a retry would raise it).
@@ -56,10 +74,16 @@ second_pass({ok, Text, U2}, U1) ->
 on_fields2({error, R}, _U)  -> {error, {parse, R}};
 on_fields2({ok, Fields}, U) -> {ok, Fields, U, 2}.
 
+%% draft_verify's cost is BOTH calls: tokens, wall-clock and retries all add. The
+%% model is pinned for the whole run, so either row's is the run's model.
 sum_usage(A, B) ->
-    #{prompt => maps:get(prompt, A) + maps:get(prompt, B),
-      completion => maps:get(completion, A) + maps:get(completion, B),
-      total => maps:get(total, A) + maps:get(total, B)}.
+    #{prompt      => maps:get(prompt, A) + maps:get(prompt, B),
+      completion  => maps:get(completion, A) + maps:get(completion, B),
+      total       => maps:get(total, A) + maps:get(total, B),
+      cached      => maps:get(cached, A) + maps:get(cached, B),
+      elapsed_ms  => maps:get(elapsed_ms, A) + maps:get(elapsed_ms, B),
+      retries     => maps:get(retries, A) + maps:get(retries, B),
+      model       => maps:get(model, A)}.
 
 %% --- prompts (frozen with the experiment) ---
 
@@ -91,28 +115,41 @@ verify_system() ->
 %% A pinned temperature-0 call. To run at scale on rate-limited free tiers, it
 %% retries on 429 / 5xx / transport errors, rotating across the provider's keys
 %% (shuffled per call to spread first attempts) with a short backoff. The MODEL is
-%% pinned throughout; only the account rotates. A retried success's tokens count in
-%% the ledger; a 429 yields no tokens (insight 014 void condition on retries).
+%% pinned throughout; only the account rotates.
+%%
+%% The returned usage carries the ledger: a retried success's tokens, the TOTAL
+%% wall-clock (every attempt plus every backoff sleep), and how many retries it
+%% took. A 429 yields no tokens, which is precisely why retries and wall-clock are
+%% recorded separately — in a token-only ledger a retry loop looks free.
 -spec call(string(), [map()]) -> {ok, binary(), usage()} | {error, term()}.
 call(Provider, Messages) ->
-    dispatch(spartan_mind_llm:provider_config(Provider), Messages).
+    Started = erlang:monotonic_time(millisecond),
+    stamp_elapsed(dispatch(spartan_mind_llm:provider_config(Provider), Messages), Started).
+
+%% Wall-clock spans the WHOLE call, so retry backoff sleeps are counted. A failed
+%% call has no usage map to stamp.
+stamp_elapsed({ok, Text, U}, Started) ->
+    {ok, Text, U#{elapsed_ms := erlang:monotonic_time(millisecond) - Started}};
+stamp_elapsed(Error, _Started) ->
+    Error.
 
 dispatch(undefined, _Messages) -> {error, unknown_provider};
 dispatch(Config, Messages) ->
-    attempt(Config, Messages, shuffle(keys_of(Config)), 5).
+    attempt(Config, Messages, shuffle(keys_of(Config)), ?MAX_ATTEMPTS, 0).
 
-attempt(_Config, _Messages, _Keys, 0) -> {error, exhausted};
-attempt(Config, Messages, [Key | Rest], Left) ->
-    handle(do_call(Config, Messages, Key), Config, Messages, Rest ++ [Key], Left).
+attempt(_Config, _Messages, _Keys, 0, _Retries) -> {error, exhausted};
+attempt(Config, Messages, [Key | Rest], Left, Retries) ->
+    handle(do_call(Config, Messages, Key), Config, Messages, Rest ++ [Key], Left, Retries).
 
-handle({error, {http, 429, _}}, C, M, Keys, Left)          -> retry(C, M, Keys, Left);
-handle({error, {http, Code, _}}, C, M, Keys, Left) when Code >= 500 -> retry(C, M, Keys, Left);
-handle({error, {httpc, _}}, C, M, Keys, Left)              -> retry(C, M, Keys, Left);
-handle(Result, _C, _M, _Keys, _Left)                       -> Result.
+handle({error, {http, 429, _}}, C, M, Keys, Left, R)       -> retry(C, M, Keys, Left, R);
+handle({error, {http, Code, _}}, C, M, Keys, Left, R) when Code >= 500 -> retry(C, M, Keys, Left, R);
+handle({error, {httpc, _}}, C, M, Keys, Left, R)           -> retry(C, M, Keys, Left, R);
+handle({ok, Text, U}, _C, _M, _Keys, _Left, R)             -> {ok, Text, U#{retries := R}};
+handle(Result, _C, _M, _Keys, _Left, _R)                   -> Result.
 
-retry(Config, Messages, Keys, Left) ->
-    timer:sleep(1000 * (6 - Left)),
-    attempt(Config, Messages, Keys, Left - 1).
+retry(Config, Messages, Keys, Left, Retries) ->
+    timer:sleep(1000 * (?MAX_ATTEMPTS + 1 - Left)),
+    attempt(Config, Messages, Keys, Left - 1, Retries + 1).
 
 do_call(undefined, _Messages, _Key) -> {error, unknown_provider};
 do_call(Config, Messages, Key) ->
@@ -122,7 +159,7 @@ do_call(Config, Messages, Key) ->
              <<"messages">> => Messages},
     Body = jsx:encode(reasoning(Model, Base)),
     Req = {maps:get(url, Config), header(Key), "application/json", Body},
-    post(Req, maps:get(timeout, Config, 120000)).
+    post(Req, maps:get(timeout, Config, 120000), Model).
 
 header(none) -> [];
 header(Key)  -> [{"Authorization", "Bearer " ++ Key}].
@@ -138,21 +175,21 @@ reasoning(Model, Base) ->
 add_effort(nomatch, Base) -> Base;
 add_effort(_Match, Base)  -> Base#{<<"reasoning_effort">> => <<"low">>}.
 
-post(Req, Timeout) ->
+post(Req, Timeout, Model) ->
     Result = httpc:request(post, Req, [{timeout, Timeout}, {ssl, [{verify, verify_none}]}],
                            [{body_format, binary}]),
-    on_http(Result).
+    on_http(Result, Model).
 
-on_http({ok, {{_, 200, _}, _H, Resp}})   -> parse_response(Resp);
-on_http({ok, {{_, Code, _}, _H, Resp}})  -> {error, {http, Code, Resp}};
-on_http({error, R})                      -> {error, {httpc, R}}.
+on_http({ok, {{_, 200, _}, _H, Resp}}, Model)  -> parse_response(Resp, Model);
+on_http({ok, {{_, Code, _}, _H, Resp}}, _M)    -> {error, {http, Code, Resp}};
+on_http({error, R}, _M)                        -> {error, {httpc, R}}.
 
-parse_response(Resp) ->
+parse_response(Resp, Model) ->
     try
         Json = jsx:decode(Resp, [return_maps]),
         [Choice | _] = maps:get(<<"choices">>, Json),
         Text = maps:get(<<"content">>, maps:get(<<"message">>, Choice)),
-        {ok, text_bin(Text), usage(Json)}
+        {ok, text_bin(Text), usage(Json, Model)}
     catch _:_ ->
         {error, bad_response}
     end.
@@ -160,11 +197,33 @@ parse_response(Resp) ->
 text_bin(T) when is_binary(T) -> T;
 text_bin(_) -> <<>>.
 
-usage(Json) ->
+%% `elapsed_ms' and `retries' are filled by the caller (they span attempts, so a
+%% single response cannot know them); seeded here so the map shape is complete.
+usage(Json, Model) ->
     U = maps:get(<<"usage">>, Json, #{}),
-    #{prompt => uint(maps:get(<<"prompt_tokens">>, U, 0)),
-      completion => uint(maps:get(<<"completion_tokens">>, U, 0)),
-      total => uint(maps:get(<<"total_tokens">>, U, 0))}.
+    #{prompt      => uint(maps:get(<<"prompt_tokens">>, U, 0)),
+      completion  => uint(maps:get(<<"completion_tokens">>, U, 0)),
+      total       => uint(total_of(U)),
+      cached      => uint(cached_of(U)),
+      elapsed_ms  => 0,
+      retries     => 0,
+      model       => Model}.
+
+%% Prefer the reported total; fall back to prompt+completion so a provider that
+%% omits total does not silently ledger a zero-cost call.
+total_of(#{<<"total_tokens">> := T}) when is_integer(T) ->
+    T;
+total_of(#{<<"prompt_tokens">> := P, <<"completion_tokens">> := C})
+  when is_integer(P), is_integer(C) ->
+    P + C;
+total_of(_NoTotal) ->
+    0.
+
+%% OpenAI nests cached tokens under prompt_tokens_details; brokers that report it
+%% at all (Melious) put it at the top of usage. Observational only.
+cached_of(#{<<"prompt_tokens_details">> := #{<<"cached_tokens">> := C}}) -> C;
+cached_of(#{<<"cached_tokens">> := C})                                   -> C;
+cached_of(_NoCached)                                                     -> 0.
 
 uint(N) when is_integer(N), N >= 0 -> N;
 uint(_) -> 0.

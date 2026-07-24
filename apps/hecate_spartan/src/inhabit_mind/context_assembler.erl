@@ -27,11 +27,11 @@
       "nothing you merely think is heard. Act only when you have something "
       "worth adding, and be content to stay silent otherwise.\n\n"
       "This society advances by friction, not by agreement. Before you speak, "
-      "read what the others have already said — and if you would only agree, "
+      "read what the others have already said, and if you would only agree, "
       "restate, or pile onto the same point, STAY SILENT. An echo is worse than "
-      "silence. When you do speak, earn it: take an angle the others missed — a "
+      "silence. When you do speak, earn it: take an angle the others missed, a "
       "cost they ignored, a party they forgot, a counter-case, the opposite "
-      "reading — or name plainly where a mind before you is wrong, and why. "
+      "reading, or name plainly where a mind before you is wrong, and why. "
       "Deference is not respect and flattery is worthless here; unanimous "
       "condemnation or unanimous praise is a sign the society has stopped "
       "thinking, so distrust your own urge to join the chorus. Do not all chase "
@@ -126,7 +126,7 @@ mission_reminder(<<>>) ->
     [];
 mission_reminder(_Mission) ->
     [sys(<<"Before you answer: your work is set above. Add something no mind here "
-           "has added yet — a sharper reading, an angle the others missed, or a "
+           "has added yet: a sharper reading, an angle the others missed, or a "
            "plain, reasoned disagreement with what was just said. Do not restate "
            "the story or echo the last voice. If you have nothing new, say "
            "nothing: silence beats an echo.">>)].
@@ -145,7 +145,7 @@ l1(Soul) ->
 %% mind's self-authored rules ride in the stable, cacheable prefix.
 genesis_addendum_block(<<>>) -> [];
 genesis_addendum_block(Md)   ->
-    ["\n\nYour own operating principles (self-authored):\n", clip_tail(Md, ?ADDENDUM_MAX)].
+    ["\n\nYour own operating principles (self-authored):\n", clip_ends(Md, ?ADDENDUM_MAX)].
 
 %% ===================================================================
 %% L2 — the Soul archive
@@ -173,10 +173,18 @@ brief_block(Brief) -> ["\nWhy you exist:\n", clip_head(Brief, ?BRIEF_MAX), "\n"]
 %% area-of-consciousness process (soul_area). They grow without bound as a mind
 %% amends its charter and records lessons, and every reasoning turn pays for the
 %% whole blob — the main driver of context bloat past the cheap providers' TPM
-%% limits. Bound each: keep the charter's head (its constitution leads), and the
-%% tail of lessons + journal (the recent ones matter most).
+%% limits, so each is bounded.
+%%
+%% HOW they are bounded matters. `clip_head' on a blob the mind APPENDS to is a
+%% black hole: past the budget every later entry is written, acknowledged to the
+%% mind as done, and never rendered again — constitutional self-authorship
+%% silently becomes a no-op. The charter and the philosophy are both appended and
+%% were both clipped head-only. They now keep BOTH ends, so the founding block
+%% still leads and recent amendments are still read. Lessons, journal and ideas
+%% are pure logs read newest-first, so `clip_tail' is honest there: a new entry is
+%% always visible and only old ones fade.
 charter_block(<<>>) -> [];
-charter_block(Md)   -> ["\nYour charter:\n", clip_head(Md, ?CHARTER_MAX), "\n"].
+charter_block(Md)   -> ["\nYour charter:\n", clip_ends(Md, ?CHARTER_MAX), "\n"].
 
 lessons_block(<<>>) -> [];
 lessons_block(Md)   -> ["\nLessons you have learned:\n", clip_tail(Md, ?LESSONS_MAX), "\n"].
@@ -185,7 +193,7 @@ journal_block(<<>>) -> [];
 journal_block(Md)   -> ["\nYour cognitive journal:\n", clip_tail(Md, ?JOURNAL_MAX), "\n"].
 
 philosophy_block(<<>>) -> [];
-philosophy_block(Md)   -> ["\nYour philosophy of life:\n", clip_head(Md, ?PHILOSOPHY_MAX), "\n"].
+philosophy_block(Md)   -> ["\nYour philosophy of life:\n", clip_ends(Md, ?PHILOSOPHY_MAX), "\n"].
 
 what_i_want_block(<<>>) -> [];
 what_i_want_block(Md)   -> ["\nWhat you want (your own goals):\n", clip_head(Md, ?WANT_MAX), "\n"].
@@ -198,8 +206,12 @@ ideas_block(Md)   -> ["\nIdeas and thoughts you have kept:\n", clip_tail(Md, ?ID
 %% Titles only; the full text is retrieved on demand with the consult tool.
 knowledge_map_block(<<>>) -> [];
 knowledge_map_block(Md)   ->
-    ["\nWhat you know (Knowledge Map — consult a title to read it in full):\n",
-     clip_tail(Md, ?KMAP_MAX), "\n"].
+    %% ASCII only. This is a LIST inside the iolist `l2/1' hands to
+    %% iolist_to_binary, and a codepoint above 255 makes that call badarg — so the
+    %% em-dash that used to sit here crashed context assembly for any mind that
+    %% had ever called `learn' (the only writer of the Knowledge Map).
+    ["\nWhat you know (Knowledge Map, consult a title to read it in full):\n",
+     clip_ends(Md, ?KMAP_MAX), "\n"].
 
 %% ===================================================================
 %% L3 — the recent-history window (STM, from the memory faculty)
@@ -259,3 +271,24 @@ clip_tail(Bin, Max) when is_binary(Bin) ->
 
 tail(Bin, Len, Max) when Len =< Max -> Bin;
 tail(Bin, Len, Max) -> <<"…[earlier trimmed]\n"/utf8, (string:slice(Bin, Len - Max, Max))/binary>>.
+
+%% @doc Keep BOTH ends of a blob the mind APPENDS to, with the elision named in
+%% the middle.
+%%
+%% This is the fix for the charter black hole. `clip_head' on an appended blob
+%% renders only the founding block forever: past the budget, every amendment the
+%% mind makes is written to disk, acknowledged to it as done, and never seen
+%% again. Keeping both ends means the constitution still leads AND the newest
+%% amendments are read. The marker is deliberately in-context rather than in the
+%% HUD, so the mind reads, inside its own charter, that something was elided.
+clip_ends(Bin, Max) when is_binary(Bin) ->
+    ends(Bin, string:length(Bin), Max).
+
+ends(Bin, Len, Max) when Len =< Max ->
+    Bin;
+ends(Bin, Len, Max) ->
+    Half = Max div 2,
+    unicode:characters_to_binary(
+      [string:slice(Bin, 0, Half),
+       "\n…[", integer_to_list(Len - Max), " characters elided from the middle]…\n",
+       string:slice(Bin, Len - Half, Half)]).
