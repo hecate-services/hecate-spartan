@@ -447,14 +447,93 @@ either re-births or refuses rather than adopting a partial identity.
 
 ---
 
+## 4b. Defect 9 — chain-following is a no-op, so `evolve/2` is pure cost
+
+Found at the P6 DESIGN gate, before any runner was written. Verified independently
+against `mind_memory.erl:127-147`.
+
+```
+Seeds    = topn(cosine over Vectored, K)     %% the GLOBAL top-K
+Expanded = Seeds ∪ links(Seeds), filtered to vectored entries   %% Seeds ⊆ Expanded ⊆ Vectored
+Ranked   = topn(cosine over Expanded, K)
+```
+
+The top-K of any subset that contains the global top-K **is** the global top-K.
+So `Ranked = Seeds`, for every query, every link set, every K. `follow_chains/2`
+cannot change what `recall/3` returns. It does work and returns the same list.
+
+Consequences:
+
+- **`evolve/2` has no effect on the system.** `links` is written by `link_to/2`
+  and by `commit_links/3`, and read in exactly one place: `follow_chains/2`.
+  Verified by grep. So the LLM call it makes every eight turns is pure cost.
+- The module docstring ("recall → cosine seeds → FOLLOW LINKS → re-rank") is not
+  what the code does.
+- **This nearly produced a fake signed negative.** The draft pre-registration's K2
+  measured chain-gain on gold items not reachable as a seed. Those are exactly the
+  items the re-rank discards. K2 was guaranteed to fail at any N, and would have
+  read as a clean result about Gene's agentic linking rather than what it is: a
+  code defect wearing an experiment's clothes. This is the "never sign a faculty
+  verdict on a silent faculty" rule from arena rounds 8 and 10, caught one gate
+  earlier this time.
+
+**Sequencing, deliberately not "fix it now".** With chains inert, the `semantic`
+arm reduces to plain cosine top-K, which is exactly what K1 needs in order to
+isolate the embedder. So: leave `recall/3` alone, run K1 against it, and only then
+decide whether a repaired retriever should let links change ranking (a link bonus
+in the re-rank, or seeds drawn by threshold rather than top-K so expansion can add
+candidates from outside the global top-K). K2 is re-registered against the
+repaired object afterwards. If the embedder dies at K1, chains and `evolve/2` die
+with it and the question dissolves.
+
+## 4c. Defect 10 — a mixed-width store silently returns arbitrary recalls (FIXED)
+
+The mind is mesh-first for embeddings and `prefer_mesh/3` falls back to a local
+HTTP embedder **per call**. So one store can legitimately hold vectors from two
+models of two different widths: the mesh service serves 384-dim fastembed, and a
+local fallback model need not.
+
+`mind_memory:cosine/2` answers `0.0` on a width mismatch. Without a comparability
+filter, a mismatched query scored **every** memory `0.0`, and `topn/2` then
+returned an arbitrary K as though they were the nearest. The mind was handed
+whichever memories sorted first and told they were its most relevant, with nothing
+anywhere reporting it.
+
+Worse than returning nothing, and it fires **precisely when the fallback is doing
+its job**, which is when a mind most needs its memory to behave.
+
+Same class as the `(unreflected)` sleep-cycle fallback and faber insight 002:
+silent fallbacks hide correctness, not just speed. And the same fix shape: make
+the degradation honest rather than remove the resilience. `comparable/2` filters
+recall to same-width vectors, so a query embedded by a different model finds
+nothing comparable and `semantic/5` degrades to lexical, which is a real answer.
+
+The HTTP fallback itself **stays**, by operator decision: a mind should not lose
+semantic recall because the mesh hiccuped. Deleting it was the wrong fix; making
+it not poison recall was the right one.
+
 ## 5. Sibling-repo checks (must be pinned in the P6 pre-registration)
 
-| Check | Why it is a validity threat |
+**Transport is the mesh. Settled, and not open for re-litigation.** `hecate-embedder`
+*is* the mesh embedding service; consumers reach it with
+`macula:call(io.hecate.embed, #{text, kind})`. Raw HTTP is not an acceptable
+consumer transport, and an earlier draft of this section proposing an HTTP
+endpoint was wrong. Note the distinction that makes this coherent: HTTP *inside*
+a box, between the embedder service and a local model server, is a backend
+choice, not a consumer transport. `hecate_embed` supports an `ollama` backend
+over loopback for exactly that.
+
+| Check | Status |
 |---|---|
-| **Embed prefix convention.** `embedder.erl:88-90` hardcodes nomic's `search_query:` / `search_document:`. `hecate-embed` ships an e5-family model whose convention is `query:` / `passage:`, and may apply prefixes service-side | A mismatch or double-prefix silently degrades P6's semantic arm. Pin model **and** prefix in the pre-reg |
-| **Similarity metric.** `mind_memory` is cosine; `hecate_vector` may be L2, normalized or not | A metric change reorders results. Whatever P6 freezes must be what production runs |
-| **Embedder liveness.** With the fleet decommissioned, is `io.hecate.embed` advertised anywhere? | If not, `macula:call` waits out its 8 s timeout (`embedder.erl:20,54-55`) on **every** remember and recall before falling back to HTTP. Measure once; if confirmed, flip mesh-first to fallback until a mesh embedder exists. This is a live performance bug, not just a P6 concern |
-| **hecate-rag collection semantics** | Only if D2 ever revisits the commons path. Check before, not after |
+| **Which model and convention** | **Settled.** `hecate-embedder`'s `sys.config` sets `{hecate_embed, [{backend, nif}]}`: fastembed in-process, model baked into the image, `kind` → prefix applied **service-side**. So there is exactly one convention and the client hardcodes nothing |
+| **Embed prefix convention in the client** | **The fix is deletion, not correction.** The nomic `search_query:` / `search_document:` prefixes at `embedder.erl:88-90` exist *only* on the HTTP fallback path. Removing that path removes the hardcoded convention, the per-call mesh/HTTP mixing, and the 8-second timeout followed by a silent answer from a different model, in one change |
+| **Similarity metric** | Still to pin. `mind_memory` is cosine over unnormalised vectors |
+| **Embedder liveness** | **Deployed and healthy**: `ghcr.io/hecate-services/hecate-embedder:latest` on msi00, up 3 days, `Network=host`, joins the mesh itself via `MACULA_STATION_SEEDS`. **Not yet verified to answer** — that needs a mesh-connected peer, and `hecate-daemon` is not one (it is L3, UI-attended, and has been removed from msi00 where it did not belong) |
+| **hecate-rag collection semantics** | Only if D2 ever revisits the commons path |
+
+**Not a finding:** ollama on msi00 has served zero embed requests in 48 hours, but
+nothing has been calling the embedder at all, so that number discriminates
+nothing about its backend. The `sys.config` does.
 
 ---
 
