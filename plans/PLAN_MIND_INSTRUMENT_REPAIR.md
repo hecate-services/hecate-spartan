@@ -488,12 +488,26 @@ with it and the question dissolves.
 
 ## 5. Sibling-repo checks (must be pinned in the P6 pre-registration)
 
-| Check | Why it is a validity threat |
+**Transport is the mesh. Settled, and not open for re-litigation.** `hecate-embedder`
+*is* the mesh embedding service; consumers reach it with
+`macula:call(io.hecate.embed, #{text, kind})`. Raw HTTP is not an acceptable
+consumer transport, and an earlier draft of this section proposing an HTTP
+endpoint was wrong. Note the distinction that makes this coherent: HTTP *inside*
+a box, between the embedder service and a local model server, is a backend
+choice, not a consumer transport. `hecate_embed` supports an `ollama` backend
+over loopback for exactly that.
+
+| Check | Status |
 |---|---|
-| **Embed prefix convention.** `embedder.erl:88-90` hardcodes nomic's `search_query:` / `search_document:`. `hecate-embed` ships an e5-family model whose convention is `query:` / `passage:`, and may apply prefixes service-side | A mismatch or double-prefix silently degrades P6's semantic arm. Pin model **and** prefix in the pre-reg |
-| **Similarity metric.** `mind_memory` is cosine; `hecate_vector` may be L2, normalized or not | A metric change reorders results. Whatever P6 freezes must be what production runs |
-| **Embedder liveness.** With the fleet decommissioned, is `io.hecate.embed` advertised anywhere? | If not, `macula:call` waits out its 8 s timeout (`embedder.erl:20,54-55`) on **every** remember and recall before falling back to HTTP. Measure once; if confirmed, flip mesh-first to fallback until a mesh embedder exists. This is a live performance bug, not just a P6 concern |
-| **hecate-rag collection semantics** | Only if D2 ever revisits the commons path. Check before, not after |
+| **Which model and convention** | **Settled.** `hecate-embedder`'s `sys.config` sets `{hecate_embed, [{backend, nif}]}`: fastembed in-process, model baked into the image, `kind` → prefix applied **service-side**. So there is exactly one convention and the client hardcodes nothing |
+| **Embed prefix convention in the client** | **The fix is deletion, not correction.** The nomic `search_query:` / `search_document:` prefixes at `embedder.erl:88-90` exist *only* on the HTTP fallback path. Removing that path removes the hardcoded convention, the per-call mesh/HTTP mixing, and the 8-second timeout followed by a silent answer from a different model, in one change |
+| **Similarity metric** | Still to pin. `mind_memory` is cosine over unnormalised vectors |
+| **Embedder liveness** | **Deployed and healthy**: `ghcr.io/hecate-services/hecate-embedder:latest` on msi00, up 3 days, `Network=host`, joins the mesh itself via `MACULA_STATION_SEEDS`. **Not yet verified to answer** — that needs a mesh-connected peer, and `hecate-daemon` is not one (it is L3, UI-attended, and has been removed from msi00 where it did not belong) |
+| **hecate-rag collection semantics** | Only if D2 ever revisits the commons path |
+
+**Not a finding:** ollama on msi00 has served zero embed requests in 48 hours, but
+nothing has been calling the embedder at all, so that number discriminates
+nothing about its backend. The `sys.config` does.
 
 ---
 
