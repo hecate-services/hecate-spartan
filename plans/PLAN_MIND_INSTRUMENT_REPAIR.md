@@ -6,9 +6,10 @@
 [`../docs/PLAN_RIP_ES.md`](../docs/PLAN_RIP_ES.md),
 [`../insights/README.md`](../insights/README.md)
 
-Seven defects were found in `inhabit_mind` by two independent code studies. This
-plan fixes them, and orders the work so that **nothing precedes the programme's
-one cleared experiment**.
+Eight defects in `inhabit_mind`: seven found by two independent code studies, an
+eighth found while reviewing this plan's own failure model. It fixes them, and
+orders the work so that **nothing precedes the programme's one cleared
+experiment**.
 
 ---
 
@@ -186,6 +187,61 @@ redesign as membership-by-delegation with a quorum gate (concurrent joins agains
 a quorum is a real invariant). Neither exists. Revisit the question when one does,
 against this criterion, not against a house default.
 
+#### D1.3 — The failure model, and what the journal is not
+
+The document and the journal are **not two copies of one thing**. The document is
+state; the journal is a record of acts. Divergence needs reconciling only when one
+is derived from the other, and neither is. That is the same property that makes
+evoq unnecessary here.
+
+**The document always wins. Unconditionally.** No exceptions, no "unless the
+journal is newer".
+
+A torn file is already impossible for Soul areas (`soul_area.erl:71-74` writes
+tmp-then-rename). The only crash disagreement is a torn *pair*:
+
+| Crash window | Result |
+|---|---|
+| Document landed, journal entry lost | content exists, the act is unrecorded. **Lossy** |
+| Journal entry landed, document write lost | an act recorded that the document does not show. **Not lossy**, provided the entry carries the content |
+
+**Ordering rule:** append to the journal first, carrying the **full intended
+prose**, fsync, then write the document. This removes the lossy direction and
+leaves only journal-ahead-by-one, which destroys nothing.
+
+**Two anti-requirements.** Named here so nobody adds them later as a small
+improvement:
+
+1. **Never auto-apply a journal-ahead entry to the document at boot.** That is the
+   reconciliation problem reintroduced in one line.
+2. **Never build a drift detector that diffs the document against the journal.**
+   It is undecidable by construction: a legitimate hand-edit made outside the mind
+   (which must survive) and a crash-window gap are indistinguishable. Any such
+   detector either reverts real edits or cries wolf. A boot-time notice may key
+   off a did-my-last-write-complete marker only, and its response is a log line,
+   never a write.
+
+**What the journal therefore is not.** It is incomplete by design, because
+hand-edits bypass it, and it may be ahead by one act after a crash. It is an
+archive of what the mind *did*, not a history of what the file *contains*.
+Recovery from it is **manual and assisted, never automatic**. Saying "audit and
+recovery" without that qualifier oversells it.
+
+**Two classes, and loss-safety comes from different places in each:**
+
+| Class | Members | Authority | Loss-safety from |
+|---|---|---|---|
+| Authored documents | Soul areas, and CMO/MSO gists under defect 2b | the file | atomic rename plus journal-first ordering carrying the prose |
+| Derived / ephemeral | STM windows, trim victims, recall caches | the journal | rebuilt from the journal; this is where "structurally impossible to lose" is a literal claim, and where the trim-without-archive defect lives |
+
+Defect 2b moves the gists from the second class into the first. That is
+deliberate, but it means their loss-safety comes from the journal carrying the
+prose, not from replay.
+
+**Durability note:** none of these paths currently `fsync`. `rename` is atomic
+with respect to readers but not durable across power loss. The journal append is
+the one place worth paying for an fsync.
+
 ### D2 — Vector path: deferred, gated on P6
 
 **The apparent conflict between org rules is false.** Insight 012's "external"
@@ -312,6 +368,18 @@ the full 6-attempt retry schedule inside the mind's `gen_server`. Fix:
 `spawn_monitor`, as reasoning already does at `:229`.
 *Verification:* `timer:tc` — the mind answers a stimulus while `evolve` is in flight.
 
+**Defect 8, the identity file can tear, and the tear is sticky.**
+`soul.erl:184` writes the mind's identity with a bare
+`file:write_file(Path, encode_identity(Identity))`, while its sibling
+`soul_area.erl:71-74` has `write_atomic`. Worse than an ordinary torn write: the
+read branch `from_disk_or_birth({ok, Bin}, ...)` at `:180-181` accepts **any**
+existing file as authoritative with no validation, so a file torn at birth is
+read as the mind's identity forever and re-birth never triggers. The window is one
+write, at birth, holding `did`, `name`, `genesis_version`, `born_at` and the
+founding brief. Fix: reuse the sibling's tmp-then-rename, and validate on read.
+*Verification:* truncate the identity file mid-record, boot, assert the mind
+either re-births or refuses rather than adopting a partial identity.
+
 ---
 
 ## 5. Sibling-repo checks (must be pinned in the P6 pre-registration)
@@ -338,6 +406,8 @@ Tests that must exist and must fail before their fix:
 | charter amendment past 2000 graphemes reaches context | ∥ | fails |
 | defused output has one closing marker, no control tokens | ∥ | fails |
 | mind responds during `evolve` | ∥ | fails |
+| a torn identity file is refused, not adopted | ∥ | fails, adopted silently |
+| a hand-edit to a Soul `.md` survives the next boot untouched | 2 | must not regress |
 
 ---
 
