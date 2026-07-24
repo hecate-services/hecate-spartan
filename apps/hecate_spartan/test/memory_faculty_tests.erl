@@ -1,8 +1,12 @@
 %%% @doc Tests for the memory faculty: tiered stores, the Sleep Cycle
-%%% consolidation (STM -> CMO -> MSO), and self-healing. Reflection runs the
-%%% deterministic fallback here (no provider keys in the test env, so the LLM
-%%% path returns {error, no_backend} fast), which is exactly what lets the Sleep
-%%% Cycle keep working when the providers are down.
+%%% consolidation (STM -> CMO -> MSO), and self-healing.
+%%%
+%%% Reflection is a SEAM (`mind_reflector'). These tests used to rely on the old
+%%% deterministic fallback, where a failed reflection still advanced the tier by
+%%% filing a truncated raw join as if it were an insight. That fallback was the
+%%% defect: it trimmed raw experience away because a provider was down, and made
+%%% a failed consolidation indistinguishable from a good one. The tests now supply
+%%% a reflector for the success path and assert the failure path keeps STM intact.
 -module(memory_faculty_tests).
 
 -include_lib("eunit/include/eunit.hrl").
@@ -16,6 +20,8 @@ faculty_test_() ->
       fun cmos_meta_summarize_to_mso/1,
       fun consolidated_returns_texts/1,
       fun a_gist_stays_bounded/1,
+      fun no_backend_keeps_stm_intact/1,
+      fun nothing_observed_is_ever_destroyed/1,
       fun store_self_heals_from_disk/1]}.
 
 %% A fresh on-disk root per test. `unique_integer' restarts each VM, so these
@@ -30,8 +36,18 @@ setup() ->
     Dir.
 
 cleanup(Dir) ->
+    _ = application:unset_env(hecate_spartan, mind_reflector),
     _ = os:cmd("rm -rf " ++ binary_to_list(Dir)),
     ok.
+
+%% Install a deterministic reflector: consolidation succeeds and yields Text.
+reflects(Text) ->
+    application:set_env(hecate_spartan, mind_reflector, fun(_Msgs) -> {ok, Text} end).
+
+%% Every backend down.
+reflection_fails() ->
+    application:set_env(hecate_spartan, mind_reflector,
+                        fun(_Msgs) -> {error, all_backends_exhausted} end).
 
 fresh(Dir) ->
     Did = <<"did:test:", (integer_to_binary(erlang:unique_integer([positive])))/binary>>,
@@ -47,6 +63,7 @@ observe_lands_in_stm(Dir) ->
 
 sleep_cycle_condenses_stm_to_cmo(Dir) ->
     fun() ->
+        reflects(<<"one durable insight">>),
         Did = fresh(Dir),
         [ok = memory:observe(Did, n(<<"experience">>, I)) || I <- lists:seq(1, 8)],
         %% Wait for the SETTLED state: a CMO exists AND STM has been trimmed.
@@ -58,11 +75,11 @@ sleep_cycle_condenses_stm_to_cmo(Dir) ->
         ?assert(count(Did, stm) =< 3)
     end.
 
-%% Regression: a failed reflection (no backend, as in this test env) once dumped
-%% the full concatenation, compounding up the tiers into a ~70k-token context. A
-%% gist must SHRINK — even from big raw input it stays bounded.
+%% A gist must SHRINK. A runaway model (or, formerly, a raw join) compounded up
+%% the tiers into a ~70k-token context that every future turn carried.
 a_gist_stays_bounded(Dir) ->
     fun() ->
+        reflects(binary:copy(<<"y">>, 5000)),
         Did = fresh(Dir),
         Big = binary:copy(<<"x">>, 600),
         [ok = memory:observe(Did, <<Big/binary, (integer_to_binary(I))/binary>>)
@@ -70,12 +87,12 @@ a_gist_stays_bounded(Dir) ->
         ok = wait_until(fun() -> count(Did, cmo) >= 1
                                  andalso count(Did, stm) =< 3 end, 200),
         [Cmo | _] = memory_store:all(memory:store_name(Did, cmo)),
-        %% 8 * ~600 chars joined would be ~4800; the cap keeps it a gist.
         ?assert(string:length(maps:get(text, Cmo)) =< 810)
     end.
 
 cmos_meta_summarize_to_mso(Dir) ->
     fun() ->
+        reflects(<<"a meta-summary">>),
         Did = fresh(Dir),
         %% pre-load five CMOs; one more (from an STM consolidation) tips it over
         [ok = memory_store:add(memory:store_name(Did, cmo), e(n(<<"cmo">>, I)))
@@ -88,6 +105,35 @@ cmos_meta_summarize_to_mso(Dir) ->
                                  andalso count(Did, cmo) =< 3 end, 300),
         ?assert(count(Did, mso) >= 1),
         ?assert(count(Did, cmo) =< 3)
+    end.
+
+%% DEFECT 2. Consolidation used to trim STM whether or not the reflection reached
+%% a backend, so eight turns of lived experience became one truncated join the
+%% moment every provider was down. No gist, no trim.
+no_backend_keeps_stm_intact(Dir) ->
+    fun() ->
+        reflection_fails(),
+        Did = fresh(Dir),
+        [ok = memory:observe(Did, n(<<"sentinel">>, I)) || I <- lists:seq(1, 8)],
+        timer:sleep(200),
+        ?assertEqual(0, count(Did, cmo)),
+        ?assertEqual(8, count(Did, stm)),
+        Texts = [maps:get(text, E) || E <- memory_store:all(memory:store_name(Did, stm))],
+        [?assert(lists:member(n(<<"sentinel">>, I), Texts)) || I <- lists:seq(1, 8)]
+    end.
+
+%% The stronger claim: even when consolidation SUCCEEDS and the window is trimmed
+%% down to two, nothing the mind lived through is gone. The tiers are caches; the
+%% journal is the record.
+nothing_observed_is_ever_destroyed(Dir) ->
+    fun() ->
+        reflects(<<"a gist that replaces the window">>),
+        Did = fresh(Dir),
+        [ok = memory:observe(Did, n(<<"sentinel">>, I)) || I <- lists:seq(1, 8)],
+        ok = wait_until(fun() -> count(Did, stm) =< 3 end, 200),
+        ?assert(count(Did, stm) =< 3),
+        Recovered = memory:recovered(Did),
+        [?assert(lists:member(n(<<"sentinel">>, I), Recovered)) || I <- lists:seq(1, 8)]
     end.
 
 consolidated_returns_texts(Dir) ->

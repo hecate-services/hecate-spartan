@@ -207,6 +207,8 @@ retry(St) ->
 %% A message reaches the mind; it assembles its full context and reasons about
 %% that message in its own voice. One thought at a time: while a reply is in
 %% flight we ignore new stimulus, so a burst does not start overlapping calls.
+maybe_react(Payload, #st{busy = true} = St) when is_map(Payload) ->
+    react({declined, busy}, Payload, St);
 maybe_react(_Payload, #st{busy = true} = St) ->
     St;
 maybe_react(Payload, St) when is_map(Payload) ->
@@ -228,8 +230,27 @@ react({ok, Message}, Fact, St) ->
     %% so the mind can never wedge deaf-and-busy-forever.
     _ = spawn_monitor(fun() -> run_reasoning(Self, Message, Messages, Tools) end),
     St#st{busy = true, last_reasoned = erlang:system_time(millisecond)};
-react(skip, _Fact, St) ->
+%% Its own post coming back round the agora. Nothing was missed — it already
+%% knows what it said — so note the decline but do not re-observe it.
+react({declined, own_speech}, _Fact, #st{did = Did} = St) ->
+    _ = mind_journal:append(Did, stimulus_declined_v1, #{reason => own_speech}),
+    St;
+%% DEFECT 3. A stimulus the mind was too busy or too recently-woken to reason
+%% about used to vanish entirely: it never entered STM, so the mind's own record
+%% of what it lived through was a biased sample — whatever happened to arrive at a
+%% quiet moment. Gene accumulates every observation whether or not a call fires
+%% (spartan.py:3408-3444). Record it, cheaply, with no LLM.
+react({declined, Reason}, Fact, #st{did = Did} = St) ->
+    _ = mind_journal:append(Did, stimulus_declined_v1, #{reason => Reason}),
+    _ = catch memory:observe(Did, unheard(mget(body, Fact))),
     St.
+
+%% Marked, so that when the mind next reads its recent history it can see this
+%% arrived while it was occupied and was never reasoned about.
+unheard(Body) when is_binary(Body), Body =/= <<>> ->
+    <<"(unreasoned, arrived while occupied) ", (defuse:sanitize(Body))/binary>>;
+unheard(_NotText) ->
+    <<>>.
 
 %% The structured signal a sensor attached to a fact: topic class, who reported it
 %% (country + source type), where it is about. A closed-vocabulary line the mind
@@ -283,20 +304,25 @@ stimulus(Fact, #st{did = Did, last_reasoned = Last}) ->
     decide(Fact, Did, Last, erlang:system_time(millisecond), cooldown_ms()).
 
 %% Pure so it can be tested without a live mind. Exported for that reason.
+%% The decline carries its REASON, because the three cases are not the same thing:
+%% own speech was never missed, an empty body is nothing, but a stimulus declined
+%% on cooldown is real input the mind never saw and must still record.
 -spec decide(map(), binary(), integer(), integer(), integer()) ->
-    {ok, binary()} | skip.
+    {ok, binary()} | {declined, own_speech | cooldown | empty}.
 decide(Fact, MyDid, LastReasoned, Now, Cooldown) ->
     heard(mget(from, Fact) =:= MyDid, Fact, Now - LastReasoned >= Cooldown).
 
 heard(true, _Fact, _Ready) ->
-    skip;
+    {declined, own_speech};
 heard(false, Fact, Ready) ->
     consider(mget(body, Fact), Ready).
 
 consider(Body, true) when is_binary(Body), Body =/= <<>> ->
     {ok, Body};
+consider(Body, false) when is_binary(Body), Body =/= <<>> ->
+    {declined, cooldown};
 consider(_Body, _Ready) ->
-    skip.
+    {declined, empty}.
 
 cooldown_ms() ->
     case os:getenv("HECATE_MIND_COOLDOWN_MS") of

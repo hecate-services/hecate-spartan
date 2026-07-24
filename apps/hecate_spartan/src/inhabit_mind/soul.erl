@@ -11,7 +11,7 @@
 %%% route a tool call to the faculty it belongs to.
 -module(soul).
 
--export([open/3, render/2, areas/0, area_name/2, dir/2, read_area/2]).
+-export([open/3, render/2, areas/0, area_name/2, dir/2, read_area/2, prior/2]).
 -export([amend_charter/2, record_lesson/2, record_reflection/2,
          set_grand_strategy/2, set_working_memory/2]).
 -export([record_philosophy/2, record_idea/2, set_what_i_want/2,
@@ -59,6 +59,9 @@ open(Did, DataDir, BirthMeta) ->
     Dir = dir(DataDir, Did),
     ok = filelib:ensure_dir(iolist_to_binary(filename:join(Dir, <<".keep">>))),
     Identity = ensure_identity(Dir, Did, BirthMeta),
+    %% The journal opens with the Soul, so self-authorship acts are recorded from
+    %% the mind's first breath rather than from whenever memory happens to open.
+    _ = mind_journal:open(Did, DataDir),
     ok = ensure_tree(Did, Dir),
     {ok, Identity}.
 
@@ -86,55 +89,96 @@ faculties(Did) ->
                     || {Area, _File} <- areas()]).
 
 %% --- self-authorship: a tool call, rendered to Markdown, appended/set ---
+%%
+%% ORDERING RULE (defect 7). Journal the act FIRST, carrying the full intended
+%% prose, THEN write the document. A crash between the two leaves the journal
+%% ahead by one act, which destroys nothing because the entry holds the text; the
+%% reverse order would lose the act entirely.
+%%
+%% The DOCUMENT REMAINS AUTHORITATIVE and is never regenerated from the journal.
+%% A hand-edit made outside the mind must survive, which is exactly why nothing
+%% here reads the journal back. `prior/2' is for a human, on purpose.
+%%
+%% Deliberate deviation: if the journal append fails we log loudly and STILL write
+%% the document, because losing a mind's authored prose is worse than losing the
+%% record of having authored it. The journal is incomplete by design already.
+
+append_act(Did, Kind, Area, Text) ->
+    ok = note(Did, Kind, Area, Text),
+    soul_area:append(area_name(Did, Area), Text).
+
+set_act(Did, Kind, Area, Text) ->
+    ok = note(Did, Kind, Area, Text),
+    soul_area:set(area_name(Did, Area), Text).
+
+note(Did, Kind, Area, Text) ->
+    logged(mind_journal:append(Did, Kind, #{area => Area, text => Text}), Did, Kind).
+
+logged(ok, _Did, _Kind)               -> ok;
+logged({error, no_journal}, _D, _K)   -> ok;   %% throwaway mind, or a unit test
+logged(Error, Did, Kind) ->
+    logger:error("[soul] ~ts journal append failed for ~p: ~p", [Did, Kind, Error]),
+    ok.
 
 -spec amend_charter(binary(), map()) -> ok.
 amend_charter(Did, #{entry_type := Type, statement := Stmt, derivation := Why}) ->
     Block = iolist_to_binary(["\n## ", Type, "\n\n", Stmt,
                               "\n\n_Why: ", Why, "_  ", stamp(), "\n"]),
-    soul_area:append(area_name(Did, charter), Block).
+    append_act(Did, charter_amended_v1, charter, Block).
 
 -spec record_lesson(binary(), binary()) -> ok.
 record_lesson(Did, Lesson) ->
-    soul_area:append(area_name(Did, lessons),
-                     iolist_to_binary(["- ", Lesson, "  ", stamp(), "\n"])).
+    append_act(Did, lesson_recorded_v1, lessons,
+               iolist_to_binary(["- ", Lesson, "  ", stamp(), "\n"])).
 
 -spec record_reflection(binary(), binary()) -> ok.
 record_reflection(Did, Entry) ->
-    soul_area:append(area_name(Did, journal),
-                     iolist_to_binary(["\n### ", stamp(), "\n\n", Entry, "\n"])).
+    append_act(Did, reflection_recorded_v1, journal,
+               iolist_to_binary(["\n### ", stamp(), "\n\n", Entry, "\n"])).
 
 -spec set_grand_strategy(binary(), binary()) -> ok.
 set_grand_strategy(Did, Text) ->
-    soul_area:set(area_name(Did, grand_strategy), Text).
+    set_act(Did, grand_strategy_revised_v1, grand_strategy, Text).
 
 -spec set_working_memory(binary(), binary()) -> ok.
 set_working_memory(Did, Text) ->
-    soul_area:set(area_name(Did, working_memory), Text).
+    set_act(Did, working_memory_revised_v1, working_memory, Text).
 
 -spec record_philosophy(binary(), binary()) -> ok.
 record_philosophy(Did, Statement) ->
-    soul_area:append(area_name(Did, philosophy),
-                     iolist_to_binary(["\n", Statement, "  ", stamp(), "\n"])).
+    append_act(Did, philosophy_recorded_v1, philosophy,
+               iolist_to_binary(["\n", Statement, "  ", stamp(), "\n"])).
 
 -spec record_idea(binary(), binary()) -> ok.
 record_idea(Did, Idea) ->
-    soul_area:append(area_name(Did, ideas),
-                     iolist_to_binary(["- ", Idea, "  ", stamp(), "\n"])).
+    append_act(Did, idea_recorded_v1, ideas,
+               iolist_to_binary(["- ", Idea, "  ", stamp(), "\n"])).
 
 -spec set_what_i_want(binary(), binary()) -> ok.
 set_what_i_want(Did, Text) ->
-    soul_area:set(area_name(Did, what_i_want), Text).
+    set_act(Did, what_i_want_revised_v1, what_i_want, Text).
 
 -spec set_tool_manifest(binary(), binary()) -> ok.
 set_tool_manifest(Did, Text) ->
-    soul_area:set(area_name(Did, tool_manifest), Text).
+    set_act(Did, tool_manifest_revised_v1, tool_manifest, Text).
+
+%% @doc Earlier texts this mind wrote to one area, oldest first.
+%%
+%% For AUDIT and MANUAL recovery after a destructive self-edit. Nothing applies
+%% these automatically, and nothing ever will: auto-applying a journal entry over
+%% the document is the reconciliation problem the file model exists to avoid.
+-spec prior(binary(), atom()) -> [binary()].
+prior(Did, Area) ->
+    [maps:get(text, P) || #{payload := P} <- mind_journal:records(Did),
+                          maps:get(area, P, undefined) =:= Area,
+                          maps:is_key(text, P)].
 
 %% @doc Extend the mind's own genesis addendum (self-modification). Appended to
 %% the operating principles it authors for itself; rendered in L1.
 -spec extend_genesis(binary(), binary()) -> ok.
 extend_genesis(Did, Principle) ->
-    soul_area:append(area_name(Did, genesis_addendum),
-                     iolist_to_binary(["\n- ", Principle, "  ", stamp(), "\n"])).
+    append_act(Did, principle_adopted_v1, genesis_addendum,
+               iolist_to_binary(["\n- ", Principle, "  ", stamp(), "\n"])).
 
 %% @doc The two-tier Knowledge Library: "you can't remember what you can't
 %% remember." A learned fact goes into the LIBRARY (the deep store, retrieved on
@@ -143,11 +187,11 @@ extend_genesis(Did, Principle) ->
 %% text when a title is relevant.
 -spec learn(binary(), binary(), binary()) -> ok.
 learn(Did, Title, Knowledge) ->
-    ok = soul_area:append(area_name(Did, knowledge_library),
-                          iolist_to_binary(["\n## ", Title, "\n\n", Knowledge,
-                                            "  ", stamp(), "\n"])),
-    soul_area:append(area_name(Did, knowledge_map),
-                     iolist_to_binary(["- ", Title, "\n"])).
+    ok = append_act(Did, knowledge_learned_v1, knowledge_library,
+                    iolist_to_binary(["\n## ", Title, "\n\n", Knowledge,
+                                      "  ", stamp(), "\n"])),
+    append_act(Did, knowledge_indexed_v1, knowledge_map,
+               iolist_to_binary(["- ", Title, "\n"])).
 
 %% @doc Retrieve everything stored under (or matching) a title from the deep
 %% library. Best-effort substring match; empty when nothing matches.

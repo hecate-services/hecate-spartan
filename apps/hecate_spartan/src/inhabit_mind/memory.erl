@@ -12,7 +12,17 @@
 -module(memory).
 
 -export([open/2, observe/2, consolidated/1, recent_stm/2, tiers/0, store_name/2, sleep_name/1]).
--export([stm_count/1]).
+-export([stm_count/1, recovered/1]).
+
+%% @doc Everything this mind has ever observed, oldest first, INCLUDING what the
+%% STM window and the Sleep Cycle have since trimmed away.
+%%
+%% The tiers are caches with windows; the journal is where an experience actually
+%% lives. That is what makes `memory_store:trim/2' safe: it drops entries from a
+%% window, never from the record.
+-spec recovered(binary()) -> [binary()].
+recovered(Did) ->
+    mind_journal:texts(Did, [experience_observed_v1]).
 
 %% @doc How many raw turns sit in STM right now — the Sleep Cycle's pressure
 %% gauge, surfaced to the mind's HUD so it can see consolidation approaching.
@@ -42,6 +52,8 @@ sleep_name(Did) ->
 open(Did, DataDir) ->
     Dir = dir(DataDir, Did),
     ok = filelib:ensure_dir(iolist_to_binary(filename:join(Dir, <<".keep">>))),
+    %% The journal underlies the tiers, so it opens first.
+    _ = mind_journal:open(Did, DataDir),
     ensure_tree(whereis(sleep_name(Did)), Did, Dir).
 
 ensure_tree(undefined, Did, Dir) ->
@@ -57,6 +69,10 @@ started(Other)      -> {error, Other}.
 %% simply does not record this one.
 -spec observe(binary(), binary()) -> ok.
 observe(Did, Text) when is_binary(Text), Text =/= <<>> ->
+    %% JOURNAL FIRST, then the cache. This is the single funnel into STM, so
+    %% journalling here makes "nothing a mind lived through can be destroyed" a
+    %% property of the code rather than a promise every call site has to keep.
+    _ = mind_journal:append(Did, experience_observed_v1, #{text => Text}),
     _ = catch memory_store:add(store_name(Did, stm),
                                #{text => Text, at => erlang:system_time(millisecond),
                                  importance => 5}),

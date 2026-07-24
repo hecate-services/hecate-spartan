@@ -22,7 +22,8 @@ peer_speech_engages_test() ->
 %% posts return). This is the loop's first line of defence.
 own_speech_is_ignored_test() ->
     Fact = post(?ME, <<"i just said this">>),
-    ?assertEqual(skip, spartan_mind:decide(Fact, ?ME, 0, 100000, ?COOLDOWN)).
+    ?assertEqual({declined, own_speech},
+                 spartan_mind:decide(Fact, ?ME, 0, 100000, ?COOLDOWN)).
 
 %% Within the cooldown window, even a peer's post is skipped: the mind reasons
 %% at most once per cooldown, so a busy square cannot burn tokens without bound.
@@ -30,7 +31,8 @@ cooldown_suppresses_reengagement_test() ->
     Fact = post(?OTHER, <<"reply to me now">>),
     Now = 100000,
     Recent = Now - 5000,   %% reasoned 5s ago, cooldown is 15s
-    ?assertEqual(skip, spartan_mind:decide(Fact, ?ME, Recent, Now, ?COOLDOWN)).
+    ?assertEqual({declined, cooldown},
+                 spartan_mind:decide(Fact, ?ME, Recent, Now, ?COOLDOWN)).
 
 %% Once the cooldown elapses, the same peer post engages again.
 cooldown_elapsed_reengages_test() ->
@@ -42,8 +44,10 @@ cooldown_elapsed_reengages_test() ->
 
 %% A bodyless or empty stimulus is nothing to reason about.
 empty_body_is_skipped_test() ->
-    ?assertEqual(skip, spartan_mind:decide(#{from => ?OTHER}, ?ME, 0, 100000, ?COOLDOWN)),
-    ?assertEqual(skip, spartan_mind:decide(post(?OTHER, <<>>), ?ME, 0, 100000, ?COOLDOWN)).
+    ?assertEqual({declined, empty},
+                 spartan_mind:decide(#{from => ?OTHER}, ?ME, 0, 100000, ?COOLDOWN)),
+    ?assertEqual({declined, empty},
+                 spartan_mind:decide(post(?OTHER, <<>>), ?ME, 0, 100000, ?COOLDOWN)).
 
 %% A broadcast (e.g. a sentinel digest) has no `from', so it is never mistaken
 %% for the mind's own speech and engages normally.

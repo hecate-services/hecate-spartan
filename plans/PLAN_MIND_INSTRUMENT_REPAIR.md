@@ -340,7 +340,23 @@ endpoint and the real frozen corpus. Both are RUN prerequisites, unchanged. When
 it runs, use insight 014 exactly as frozen. The evidence-only-verify idea is a
 **separate** pre-registration (M2), never an edit to a cleared spec.
 
-### Step 2 — Journal
+### Step 2 — Journal — DONE
+
+`mind_journal` is one append-only file per mind: length-framed records written at
+the end, fsynced, never rewritten. Appends are **synchronous on purpose**, because
+the ordering rule is only enforceable if the caller can wait for the append. A
+crash mid-append leaves a short final frame that the reader stops at.
+
+Deviation from the plan's vocabulary, and why: the plan listed `turn_taken_v1`
+written by the mind. It is `experience_observed_v1` written by `memory:observe/2`
+instead, because that is the single funnel into STM, which makes "nothing a mind
+lived through can be destroyed" a property of the code rather than a promise every
+call site has to keep.
+
+**Notable:** three existing tests in `memory_faculty_tests` were asserting the
+buggy behaviour. They relied on the deterministic `(unreflected)` fallback to
+advance the tier with no backend, so the defect was test-locked. Reflection is now
+a seam (`mind_reflector`), and the tests assert both paths.
 
 **Defect 2.** `sleep_cycle.erl:63-71` trims STM whether or not `reflect` reached
 an LLM; `memory_store:trim/2` hard-deletes. Fix: no `gist_formed_v1`, no window
@@ -424,9 +440,12 @@ Tests that must exist and must fail before their fix:
 | Test | Step | Currently |
 |---|---|---|
 | ledger fields populated per provider fixture | 1 | **done**, `self_audit_ledger_tests` + `mind_usage_tests` |
-| 8 sentinels survive consolidation with backends dark | 2 | fails |
-| N stimuli in one cooldown window all reach the chronicle | 2 | fails, yields 0 |
-| Soul recoverable to a prior version | 2 | fails, no history exists |
+| 8 sentinels survive consolidation with backends dark | 2 | **done**, `no_backend_keeps_stm_intact` |
+| 8 sentinels survive a SUCCESSFUL consolidation that trims the window | 2 | **done**, `nothing_observed_is_ever_destroyed` |
+| N stimuli in one cooldown window all reach the chronicle | 2 | **done**, `decide/5` carries the reason, declines are observed |
+| Soul recoverable to a prior version | 2 | **done**, `soul:prior/2` |
+| a hand-edit to a Soul `.md` survives a restart untouched | 2 | **done**, `a_hand_edit_survives` |
+| a torn journal tail loses only the partial record | 2 | **done**, `a_torn_tail_does_not_lose_earlier_records` |
 | charter amendment past 2000 graphemes reaches context | ∥ | fails |
 | defused output has one closing marker, no control tokens | ∥ | fails |
 | mind responds during `evolve` | ∥ | fails |
