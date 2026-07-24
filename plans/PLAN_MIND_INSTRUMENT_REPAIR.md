@@ -1,6 +1,6 @@
 # PLAN — Mind instrument repair
 
-**Status:** Draft 2, DESIGN-gated
+**Status:** Draft 3, DESIGN-gated, reconciled with `DESIGN_SOUL_PERSISTENCE.md`
 **Owner:** Raf
 **Companion:** [`PLAN_HECATE_SPARTAN.md`](PLAN_HECATE_SPARTAN.md) (stale, Appendix B),
 [`../docs/PLAN_RIP_ES.md`](../docs/PLAN_RIP_ES.md),
@@ -17,15 +17,41 @@ one cleared experiment**.
 They are not seven independent bugs, and they are **not** a silent regression.
 
 On 2026-07-17, event sourcing was removed from this repo deliberately, in five
-atomic always-green commits, to a written goal: *"a store-free, mesh-native
-mind"* ([`docs/PLAN_RIP_ES.md`](../docs/PLAN_RIP_ES.md)). The rationale was
-specific and good. `soul_area.erl:8-16` records it: single-writer-per-area makes
-`wrong_expected_version` — a failure the event-sourced Soul actually threw —
-impossible by construction, and gives per-faculty self-healing.
+atomic always-green commits ([`docs/PLAN_RIP_ES.md`](../docs/PLAN_RIP_ES.md)),
+against a reasoned critique
+([`docs/DESIGN_SOUL_PERSISTENCE.md`](../docs/DESIGN_SOUL_PERSISTENCE.md)).
 
-That decision achieved its goal. What it did not do was **replace the loss-safety
-the store had been providing incidentally.** Every durable thing a mind owns is
-now a file rewritten in place:
+The decisive objection in that critique is not operational, it is about what
+Spartan is for:
+
+> **It fights self-authorship, the philosophical core.** Typed events freeze the
+> shape of the self into schemas *we* authored. A mind cannot invent a new archive
+> or a new kind of self-record without a code change. Markdown lets a mind write
+> and restructure anything. **ES is anti-Spartan at the level of what Spartan is
+> for.**
+
+That is right, and it is why the Soul is thirteen readable Markdown archives
+(`soul.erl:25-39`: `CharterOfSelf.md`, `LessonsLearned.md`, `PhilosophyOfLife.md`,
+`CognitiveJournal.md`, and the rest). It is also why the operational objections
+followed: `wrong_expected_version` on `set_working_memory` was breaking live minds,
+and every self-authorship act was being laundered through text → command → typed
+event → fold → text for something Gene does as "write markdown, read markdown".
+
+**But the same document recommended a split, and only half of it shipped.**
+`DESIGN_SOUL_PERSISTENCE.md:139-142`:
+
+> **Causal history / chronicle** (turns, self-authorship acts): an **append-only
+> log**. Append-only is a genuine fit, but that is a *log*, not
+> event-sourcing-with-aggregates: no folding, no expected-version, no
+> replay-to-state.
+
+Gene has both halves: editable Markdown archives **and**
+`session_raw_entry_accumulator.jsonl`, "an append-only log of every observation,
+thought, action and tool result, the ground truth of how you think". The port kept
+the documents and dropped the accumulator.
+
+**The seven defects are the missing half.** Every durable thing a mind owns is now
+a file rewritten in place, with no record beside it:
 
 | Evidence | Consequence |
 |---|---|
@@ -46,17 +72,36 @@ ordinary bugs, unrelated to any of this, fixable in parallel.
 
 ### D1 — A per-mind append-only journal. Not evoq.
 
-**Rejected: re-adopting reckon_db/evoq.** It would reverse a one-week-old
-executed decision without answering its rationale, and it would put the open
-`hecate_om` boot-ordering bug (store catch-up replays before projections
-register) on the critical path of a defect repair. A repair plan whose
-prerequisite is fixing a platform bug in another repo is a platform project
-wearing a repair plan's clothes.
+This is not a new proposal. It is the unbuilt half of
+`DESIGN_SOUL_PERSISTENCE.md`'s own recommendation, and Gene's own split.
 
-**Adopted: one append-only journal per mind.** A single file of appended terms,
-written at the end and never rewritten, fsynced. STM, CMO, MSO and the Soul
-render become **in-memory caches rebuilt from the journal at boot**. `trim`
-becomes a cache-window operation.
+**Rejected: re-adopting reckon_db/evoq.** It would reverse a one-week-old
+executed decision whose central objection (typed schemas cap self-authorship)
+still stands, and it would put the open `hecate_om` boot-ordering bug on the
+critical path of a defect repair. A repair plan whose prerequisite is fixing a
+platform bug in another repo is a platform project wearing a repair plan's
+clothes.
+
+**Adopted: one append-only journal per mind.** A single file of appended records,
+written at the end and never rewritten, fsynced. No folding, no expected-version,
+no replay-to-state — the three things that made the Soul aggregate hostile.
+
+**The document stays the record. The journal sits beside it.** This is the
+distinction that keeps the Markdown property intact:
+
+| Data | Mechanism | Why |
+|---|---|---|
+| Soul archives (13 `.md`) | documents the mind edits directly | authored prose, human-readable, hand-editable, extensible without a code change |
+| CMO / MSO gists | **should also be Markdown** (today they are opaque `.mem` terms, `memory.erl:27-29`) | authored prose. A mind's condensed autobiography should be readable |
+| STM raw turns, stimuli, inference metering | **append-only journal** | observations, not authorship. High volume, never read by hand, needs audit |
+| Integration facts (messages, agora) | mesh publishes, signed | already correct, unchanged |
+| evoq aggregates | none in this repo | see D1.2 |
+
+STM becomes a **window over the journal**, so `trim` is a cache operation and
+cannot delete history. The Soul's `.md` files stay authoritative and are never
+regenerated from the journal; the journal records the *act* (and, because the
+self-authorship tools already carry full replacement text, that is enough to
+recover a prior version for audit without making the file a derived artifact).
 
 This buys the entire structural guarantee that matters: **destructive loss is not
 a bug you fix, it is a state you cannot express**, because nothing writes anywhere
@@ -113,6 +158,33 @@ raised with the inference provider.
 **Justification discipline:** the journal is justified on loss-safety and
 auditability, which are mechanical claims. It is **not** claimed to improve the
 mind's continuity or identity. That claim would be unfalsifiable and is out.
+
+#### D1.2 — When event sourcing *would* earn its place here
+
+`DESIGN_SOUL_PERSISTENCE.md:146,168-171` already states the criterion, and it is
+not an argument against evoq in general:
+
+> **Reserve evoq aggregates for genuine multi-writer consistency invariants.**
+> Where a real transactional aggregate with a multi-writer invariant exists,
+> event-sourcing is the right tool. A single-writer, self-authoring,
+> extensibility-first Soul is not that.
+
+Applied to this repo today, honestly: **nothing meets the criterion.** Not because
+event sourcing is wrong, but because every candidate is single-writer.
+
+| Candidate | Writers | Verdict |
+|---|---|---|
+| Soul | the mind alone | single writer, and typed schemas cap self-authorship |
+| Memory tiers, LTM | the mind alone | single writer |
+| Cost ledger | the mind alone, append-only | a log, not an aggregate |
+| Registry, inbox, agora | many peers, but ordering and provenance come from signed mesh facts | publishes, per the integration-facts doctrine |
+
+What *would* change the answer is a capability where two writers contend on one
+invariant. Concrete candidates if they are ever built: a shared inference budget
+several minds on a node draw down (double-spend matters), or the committee
+redesign as membership-by-delegation with a quorum gate (concurrent joins against
+a quorum is a real invariant). Neither exists. Revisit the question when one does,
+against this criterion, not against a house default.
 
 ### D2 — Vector path: deferred, gated on P6
 
@@ -203,10 +275,20 @@ recoverable from the journal.
 *Verification:* fire N facts inside one cooldown window, assert the next context
 chronicle contains all N. Currently 0.
 
-**Defect 7.** No Soul history. Fix: Soul writes append to the journal; the
-`soul_area` file stays as the cache. Add `soul:at_version/2`. Single-writer and
-self-healing are preserved, and `wrong_expected_version` cannot return.
-*Verification:* destructive revision, then recover the prior version.
+**Defect 7.** No Soul history. Fix: the `.md` archive stays **authoritative** and
+is never regenerated; each self-authorship act also appends a record to the
+journal beside it. `soul:prior/2` reads the journal to recover an earlier text for
+audit or recovery. The file remains the thing the mind (and a human) edits, so
+extensibility, hand-editability and single-writer self-healing are all untouched,
+and `wrong_expected_version` cannot return.
+*Verification:* destructive revision, then recover the prior version; and a
+hand-edit of the `.md` outside the mind is not clobbered by any later read.
+
+**Defect 2b (extension of the same principle).** CMO and MSO gists are authored
+LLM prose stored as opaque `term_to_binary` in `.mem` files (`memory.erl:27-29`).
+By the same rule that makes the Soul Markdown, a mind's condensed autobiography
+should be readable: write CMO and MSO as Markdown archives beside the Soul.
+*Verification:* after consolidation, the gist is readable with `cat`.
 
 ### Parallel — ordinary bugs
 
@@ -286,6 +368,15 @@ The DESIGN gate rejected all three: evoq is over-engineered for a guarantee an
 append-only journal delivers with no cross-repo risk; the instrumentation
 classification failed the plan's own stated rule; and the supersession record was
 a mechanism built ahead of the experiment that decides whether it is needed.
+
+Draft 2 framed the journal as a new proposal and had the Soul's `.md` files
+becoming a cache rebuilt from it. Both were corrected against
+`DESIGN_SOUL_PERSISTENCE.md`, which had already recommended exactly this journal
+(as a *log*, explicitly not event-sourcing-with-aggregates) and whose decisive
+argument is that documents, not schemas, are what keep self-authorship open-ended.
+The document is authoritative; the journal sits beside it. Draft 3 also extends
+that principle to the CMO and MSO gists, which are authored prose currently stored
+as opaque terms.
 
 ## Appendix B — Documentation drift found while planning
 
