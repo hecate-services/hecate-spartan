@@ -1,14 +1,27 @@
 # 017 — Experiment M1′: self-audit economics, re-registered (pre-registration)
 
-**Status: DRAFT, not gated, not built.** Programme S2. Supersedes the *run* of
+**Status: DRAFT 2, DESIGN-gated (Fable REJECTED draft 1), not built.** Programme S2.
+Supersedes the *run* of
 [014](014_experiment_m1_self_audit_economics_pre_registration.md), not its
 question or its kill criteria. [016](016_experiment_m1_result_an_instrument_failure.md)
 signed M1-as-run an instrument failure; this is the repaired instrument.
 
 The question is unchanged: **does draft-then-verify earn its ~2x compute on
 attributed extraction?** The kill criteria L1 and L2 are unchanged and are NOT
-re-opened. Only the instrument is fixed, in the three ways 016 named, plus the one
-config change 016 flagged as declarable.
+re-opened.
+
+**What M1′ actually delivers, corrected at the gate.** Draft 1 framed this as an
+L1-power run and sized a 220-item corpus to earn an L1 verdict. That framing was
+wrong twice: the sizing was at 50% power (a coin flip, Finding A below), and L1 is
+**un-makeable-fair at its own threshold for any n** (Finding B below). The gate's
+reframe, adopted: **M1′ is an L2-VALIDITY run.** 016's power-robust finding
+(draft_verify deletes grounded 8:1 over ungrounded) was computed on the 79
+*non-truncated* items, and the direction of that truncation-selection bias is
+**unknowable from retained data** because the outputs were discarded (defect 2).
+Fix 1 and fix 2 convert that unknowable bias into a known, bounded, reported one.
+**That** is what M1′ buys: the right to sign the L2 direction under a clean
+instrument. L1 is a secondary readout carrying its boundary limitation, not the
+deliverable.
 
 ## Why a re-registration and not a re-run
 
@@ -30,7 +43,7 @@ failure, so the two are never again the same event.
 
 This is not a new rule. It is building a rule 014 froze and the run skipped.
 
-## Fix 2 — persist per-item raw outputs (instrument hygiene)
+## Fix 2 — persist per-item outputs AND per-item paired counts (instrument hygiene)
 
 Every call's raw response, both arms, both draft and verify passes, is written to
 a per-item record alongside the ledger: item id, arm, pass, raw text, usage,
@@ -38,54 +51,90 @@ a per-item record alongside the ledger: item id, arm, pass, raw text, usage,
 diagnosable from retained data rather than from a summary. The run's own inability
 to explain its blocker was defect 2; this closes it.
 
+**Also persisted: the per-item paired counts** (grounded and ungrounded per arm,
+per item), not only the raw text and the aggregates. Draft 1 listed the raw text
+but not these, and the gate caught it: the *reason* fix 3 below has to reconstruct
+the variance from a Poisson proxy is precisely that the M1 run persisted aggregates
+only, so the empirical `Var(D)` the referee actually saw could not be recovered.
+With per-item paired counts retained, no future sizing ever needs the proxy again.
+
 The raw-output store is committed with the feed as part of the four-artefact
 record.
 
-## Fix 3 — size the corpus for power to test L1 at its FROZEN threshold
+## Finding B — L1 cannot be made a fair test at its own threshold, for any n
 
-This is where 016 was itself loose: it said n=79 was "~4x too small." That was
-sizing to the wrong target.
+Stated in the registration because the gate required it: sizing must not imply a
+fairness the rule does not have.
 
-**L1 tests a 50% relative reduction, not the observed one.** Powering to detect
-the run's observed 27.8% effect would only confirm a sub-threshold effect (27.8% <
-50% fails L1 on magnitude regardless of power), which is near useless. The honest
-target is: n such that IF draft_verify truly cuts ungrounded fields by ≥50%, the
-run can show it above sampling noise (the referee's `mean(D) > 2·SEM(D)` gate).
+L1 is a conjunction on a **point estimate**: observed relative reduction >= 50% AND
+`t > 2`. At a true effect of exactly 50%, the point estimate is symmetric about
+50%, so the magnitude leg passes ~50% of the time **for any n** -- tightening the
+confidence interval does not move a symmetric estimate off its own mean. The
+magnitude bar sits at 50% while the noise bar sits at zero; they test different
+nulls. So a genuinely-50% faculty is failed by L1 a large fraction of the time no
+matter how large the corpus.
 
-Sizing to the threshold effect (base ungrounded 0.228 → a 50% cut is a paired
-difference of 0.114), using the run's own base rate as the pilot:
+L1 is frozen and not re-opened. The consequence for M1': **L1 is only decisively
+resolvable when the truth is far from 50%.** Near threshold it is a coin flip by
+construction, and no corpus size fixes that. M1' reports L1 as a secondary readout
+with this boundary stated, and does not claim to have given L1 a fair test.
 
-| paired-arm correlation | scored-n for the t=2 gate |
-|---|---|
-| 0.0 (conservative, independence) | 105 |
-| 0.3 | 75 |
-| 0.5 | 56 |
+## Fix 3 -- size for L2 validity, not L1 power
 
-Base ungrounded rate held near 0.145, and ~73% of confirmatory items scored (both
-arms parsed) in the run, so **scored-n ≈ 0.73 × confirmatory-N**. To clear the
-conservative 105 with margin, **confirmatory-N ≥ 165**, so a corpus of **≥ 220
-items** (a 25% calibration slice leaves ≥165 confirmatory). Run 1 had 108
-confirmatory, so it was ~1.5× under at conservative correlation, not 4×. 016's
-"4×" is corrected here.
+Draft 1 sized a 220-item corpus to earn an L1 verdict. The gate rejected it on two
+counts, both checkable arithmetic.
 
-**The number that is frozen is the corpus SIZE and the sizing rule, declared now,
-before harvesting.** The effect size in the calculation is the frozen 50%
-threshold, not a pilot point estimate, so this is not effect-size shopping.
+**Finding A -- the table was 50% power.** The referee gate is `mean(D) > 2*SEM(D)`.
+Sizing so `E[t] = 2` makes `P(t > 2) ~ 50%`: the run clears the bar half the time.
+For 80% power the target is `E[t] ~ 2 + z_0.80 = 2.84`, scaling n by
+`(2.84/2)^2 ~ 2.0`. So the honest L1 numbers are double the draft's:
 
-## Open question for the DESIGN gate: base rate vs corpus size
+| paired-arm correlation | scored-n, 50% power (draft) | scored-n, 80% power |
+|---|---|---|
+| 0.0 (conservative) | 105 | **212** |
+| 0.3 | 75 | 152 |
+| 0.5 | 56 | 112 |
 
-The base ungrounded rate (0.145) is low, so ungrounded events are sparse and power
-comes expensively per item. Two ways to buy power, and one of them may be cheating:
+At 80% power and the conservative correlation, confirmatory-N ~ 290 and the corpus
+~ 390. **Draft 1's "1.5x under" was half a correction:** the effect-size target was
+fixed, the power level was not. The Poisson `var ~ mean` proxy under-sizes further,
+because ungrounded errors clump on hard items (over-dispersion, `Var > mean`),
+pushing the same way. A real L1-power run is ~3-4x the original, not 1.5x.
 
-1. **More items at the same distribution.** Clean, expensive, ≥220 items. No bias.
-2. **Enrich toward fact-dense items** (longer articles, higher base rate). Cheaper,
-   but it changes the corpus distribution after seeing that the first one was
-   sparse, which is a distribution chosen post-hoc. My instinct is that (2) is
-   corpus shopping and (1) is the only honest option, but the gate should rule.
+**M1' does not pay that, because L1 is not its deliverable.** Given Finding B (L1 a
+coin flip near threshold) and 016 (the faculty is heading for an L2 fail, which the
+8:1 ratio already shows without power), sizing 390 items to decide L1 is the tail
+wagging the dog.
 
-If the honest answer is (1) and ≥220 English items cannot be harvested cleanly from
-the available EU feeds under the frozen hygiene, then M1′ is **blocked on corpus
-volume**, and saying so is better than enriching to hit the number.
+**M1' is sized for L2 validity instead.** L2 is a direction, not a point estimate
+against a threshold, so it needs a clean instrument far more than a large n. A
+corpus **near the original 108 confirmatory** re-establishes the 8:1 direction under
+fix 1 (no truncation confound) and fix 2 (the selection bias now measurable), which
+is the thing M1-as-run could not sign. If the direction survives a clean instrument,
+it signs; L1 rides along as a stated-boundary secondary.
+
+Sizing off the **upper** bound of the variance estimate, not its point value, since
+the 0.145 base rate is itself noisy at n=79.
+
+## Corpus honesty and temporal drift
+
+Enriching toward fact-dense items to buy a higher base rate is corpus shopping and
+is out. Re-harvesting the **same feeds under the same frozen hygiene through the
+same automated pipeline** is a clean fresh sample: the base rate learned from run 1
+informed *sizing* (legitimate), never *selection* (which an automated harvest makes
+impossible anyway).
+
+The risk the gate named that draft 1 missed is **temporal, not selective.** "More
+recent items" from RSS means a later date window, and news fact-density drifts with
+the calendar. That is not shopping, but it can move the base rate out of the void
+band and silently mis-power the run. Closed two ways, declared now:
+
+- **Frozen harvest-window rule:** the corpus is the items under frozen hygiene from
+  the pipeline run on a single declared date, not accumulated across days.
+- **Base rate re-measured on the calibration slice before confirmatory scoring**,
+  with an out-of-band calibration base rate (outside 5-40%) declared a **void** in
+  advance. A drifted corpus then voids honestly instead of quietly mis-powering.
+
 
 ## What is NOT changed
 
@@ -99,13 +148,17 @@ volume**, and saying so is better than enriching to hit the number.
 ## One config change, declared not slipped
 
 `MAX_TOKENS` may be raised above 2000, because the cap is not a ledger cost (actual
-completion tokens are, and they are ledgered) and an artificially low cap is what
-made truncation bite. Raising it reduces truncation without touching what is
-measured. It is a change to frozen config, so it is declared HERE, with the new
-value pinned in the registration, not adjusted during a run. Candidate: 4000,
-chosen from the run's observed completion-token distribution once the raw outputs
-of a *calibration-only* pilot are in hand (a calibration pilot is not the scored
-confirmatory slice, so it does not spend the once-only scoring).
+completion tokens are, and they are ledgered). The gate confirmed this is clean, and
+why it is clean is fix 1: with truncation detected and counted as its own parse
+class, a mis-set cap costs only scored-n (power), never correctness. It cannot bias
+L1 or L2, because it never changes which fields draft_verify keeps, only whether the
+output is observed complete.
+
+**The frozen quantity is the sizing RULE, not the number.** Set the cap with
+headroom above the calibration maximum: `ceil(max_observed_completion_tokens × 1.5)`
+rounded up to a round number, measured on a **calibration-only** pilot (which is not
+the once-only confirmatory slice, so it spends nothing). 4000 is a plausible
+landing point, not a pre-committed value; the rule is what is pinned.
 
 ## The signed sentences, unchanged from 014
 
@@ -117,14 +170,23 @@ Frozen there, repeated here so M1′ carries them:
 - **Fail:** *On the frozen corpus, draft+verify failed [L1 / L2 / the token
   ceiling]. The deployed minds' mindfulness-off default stands.*
 
-## Odds
+## Why run it at all, given the answer looks decided
 
-016's power-robust finding (draft_verify deletes grounded 8:1 over ungrounded)
-already points hard at an L2 failure, and L2 needs no power at all to read as a
-direction. So M1′'s most likely outcome is a **signable** FAIL on L2, which is the
-verdict M1-as-run could not sign because its instrument was defective. The value of
-M1′ is not a new answer; it is the RIGHT to state the answer the first run pointed
-at but could not earn.
+The honest tension the gate surfaced: 016's 8:1 already reads as an L2 fail, and L2
+needs no power, so why run 108 more items? Because the 8:1 was measured on the *79
+non-truncated* items, and the direction of the truncation-selection bias is
+**unknowable from the data the run kept** — the excluded items' outputs were
+discarded (defect 2). The bias could flatter draft_verify (its truncated outputs
+were its worst audits, excluded) or malign it, and nothing retained can tell which.
+Signing L2 from the existing feed now would repeat 016's own error: quoting a
+verdict from a voided instrument.
+
+Fix 1 (truncation caught, not silently scored) and fix 2 (per-item outputs and
+paired counts retained) convert that unknowable bias into a **known, bounded,
+reported** one. That, not an L1 number, is what M1′ buys: the right to sign the L2
+direction under an instrument whose selection effect is measured rather than
+guessed. If the direction does not survive a clean instrument, that too is a real
+result and 016's standing consequence would need revisiting.
 
 ## ELI5
 
@@ -133,14 +195,22 @@ so nobody can accuse us of fiddling it after seeing results.
 
 Fix one: teach the test to notice when the AI's answer got cut off, and count that
 as its own kind of failure instead of blaming the method. Fix two: keep the AI's
-actual answers this time, so if something breaks we can see why. Fix three: use
-enough test items that the main measurement is trustworthy.
+actual answers this time, so if something breaks we can see why. Fix three turned
+out to be a trap I nearly walked into twice.
 
-The interesting correction: last time I said we needed four times as many items.
-Doing the arithmetic properly, we need about one and a half times as many, because
-the honest question is "can the double-check cut errors in half," not "can it match
-the smaller effect we happened to see." I got that wrong in the write-up of the
-last run and I am fixing it here rather than quietly.
+The trap: I first said we needed four times as many articles, then corrected that to
+one and a half. The adversary showed BOTH were wrong. My "one and a half" was still
+sized so the test passes by luck half the time, and worse, the pass/fail line I was
+sizing for is fundamentally a coin flip when the true answer sits right on it, no
+matter how many articles we use. Chasing a bigger pile of articles to settle that
+question is the tail wagging the dog.
+
+The real point of re-running is smaller and more honest: last time the AI's cut-off
+answers were quietly thrown out, and we can no longer tell whether that made the
+double-check look better or worse than it is. The fixed test keeps those answers, so
+this time we can measure it instead of guessing. That is the thing worth 108
+articles. The headline "is it worth the cost" verdict was already pointing one way,
+and this earns the right to say so cleanly.
 
 One thing we are being careful about: the easy way to get a trustworthy number
 faster is to pick juicier articles. But choosing the articles after seeing that the
