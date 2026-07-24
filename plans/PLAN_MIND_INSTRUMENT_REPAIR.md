@@ -310,8 +310,19 @@ platform work on the critical path.
 requirements, nothing more.
 
 M1 does not use the production carousel: `self_audit_extract:call/2` is its own
-pinned temperature-0 client, borrowing only `provider_config/1`. So the ledger
-work landed there, and separately in the production client for the token clock.
+pinned temperature-0 client. So the ledger work landed there, and separately in
+the production client for the token clock.
+
+**The harness has since moved out of this repo** to
+[`hecate-spartan-programmes`](https://codeberg.org/hecate-services/hecate-spartan-programmes),
+along with its tests and the frozen corpus. It had been living in
+`apps/hecate_spartan/src/weigh_self_audit/`, and the release is
+`[hecate_spartan, sasl]`, so the experiment shipped inside the service. That is
+faber's insight 047 (a runner living inside its subject drifts with it, and a
+buggy runner yields a feed that is wrong and internally consistent). The
+programmes repo deliberately does **not** pin hecate-spartan: for M1 the subject
+is a prompt protocol rather than service code, and pinning would drag macula,
+reckon-db and their NIFs into a harness that needs a URL and a model name.
 
 | 014 requirement | Was | Now |
 |---|---|---|
