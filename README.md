@@ -87,6 +87,15 @@ agora. Deployed as a small cross-country society on the beam fleet. Remaining
 upstream gaps (multi-hop propagation, streaming RPC) still shape a wider
 cross-relay federation — see [`plans/PLAN_HECATE_SPARTAN.md`](plans/PLAN_HECATE_SPARTAN.md).
 
+Beneath the Soul and the tiers sits an append-only **journal**
+(`mind_journal`), the missing half of Gene's file-plus-log split: the documents
+stay authoritative and hand-editable, and the journal records what the mind *did*
+(every experience, every declined stimulus, every self-authorship act, every LLM
+call metered). It makes memory loss structurally impossible — consolidation trims
+a *window*, never the record; a stimulus arriving mid-thought is logged, not
+dropped; and an earlier Soul version is recoverable after a bad self-edit. See
+[`docs/DESIGN_SOUL_PERSISTENCE.md`](docs/DESIGN_SOUL_PERSISTENCE.md).
+
 ## Societies (one codebase, many use cases)
 
 A **society** is a topic namespace: every topic a mind uses derives from
@@ -122,16 +131,42 @@ image updates roll in via watchtower on a new `:latest`. Config (mind persona,
 station seed, providers, `MELIOUS_MODEL`, cooldown) is per-node env. Never
 deployed by hand on a prod box.
 
+## Research: the mind's faculties are claims, and claims get tested
+
+Porting Gene's cognition raises a question the port cannot answer by itself: does
+each faculty actually earn its keep? [`insights/`](insights/) is the running
+research log that treats every "the mind does X" as falsifiable and puts a number
+to it, with a pre-registered kill threshold and an independent adversarial reviewer
+before anything is signed. Negative results are first-class.
+
+What the log has established so far:
+
+- **Self-audit (MINDfulness) fails its cost test** on attributed extraction —
+  signed (018). The default stays off, on evidence.
+- **Chain-following recall is inert** — signed (defect 9): the LLM re-linking it
+  depends on is dead cost until the retriever is repaired.
+- **The retriever's own value is unproven** and blocked on lived data (015): a fair
+  test needs a corpus harvested from a running mind, not authored by hand.
+
+The method itself keeps paying: a "green" experiment whose checker silently skipped
+a frozen rule was caught only at the claim gate (016), and a fifteen-line
+worst-case bound replaced a three-hour re-run (018). Experiment *runners* live out
+of this repo, in
+[`hecate-spartan-programmes`](https://codeberg.org/hecate-services/hecate-spartan-programmes),
+so a harness can never drift with the service it measures.
+
 ## The bigger picture
 
 Spartan's decoupled identity-kernel / swappable-backend design is the
 LLM-over-mesh thesis. [`hecate-llm`](https://codeberg.org/hecate-services/hecate-llm)
 already advertises `hecate-llm.chat` on the mesh, so a mind can reach inference by
-mesh RPC — no keys, no outbound HTTPS. The current work is sovereign **local**
-inference (a self-hosted GLM-5.2 via colibrì) so the society can think with no
-cloud provider in the path. And the neuroevolution lineage
-comes full circle: DXNN → [`faber-tweann`](https://codeberg.org/rgfaber/faber-tweann)
-→ evolvable models as mesh-hosted capabilities.
+mesh RPC — no keys, no outbound HTTPS. Sovereign **local** inference is proven: a
+mind thinks against a pinned local model (the `local` provider clause, an
+OpenAI-compatible self-hosted serve) with no cloud provider in the path — the same
+pinned-endpoint discipline the research programme needs. And the neuroevolution
+lineage comes full circle: DXNN → [`faber-tweann`](https://codeberg.org/rgfaber/faber-tweann)
+→ evolvable models as mesh-hosted capabilities (the `neuroevolved` provider clause
+is the waiting seam).
 
 ## Credit: standing on Gene Sher's work
 
@@ -179,20 +214,25 @@ his deeper *cognition* as well:
 - **MINDfulness** — draft-then-verify: the mind drafts, then re-audits both its
   reasoning AND the actions it chose against context (confabulation, sycophancy,
   hallucination, unverified provenance) before any action runs. Gated to genuine
-  input, so never his idle spin.
-- **A-Mem long-term memory** — a linked, semantic store: memories embed
-  (mesh-first via `io.hecate.embed`, then local Ollama, then lexical fallback),
-  link to their nearest neighbours, and recall follows those links one hop and
-  re-ranks. Auto-injected against every stimulus. **Durable:** the store persists
-  to disk (text + vectors + links, atomic write) and loads whole on restart, so a
-  reboot neither re-embeds nor forgets — a persistent whole-life index, not a
-  process-lifetime cache (only a brand-new mind seeds from recent STM).
-  **Agentic linking:** links start as cosine nearest-neighbour (immediate), then
-  on the sleep cadence the LLM re-links one memory from its candidates — Gene's
-  LLM-driven A-Mem linking, reciprocal — one small call per consolidation window,
-  never one per turn, and a no-op when no backend answers. **Honest limit:** the
-  on-disk term file suits the low-thousands of memories; past that it moves to
-  hecate-vector or an embedded KV — a scale step, not a cognition gap.
+  input, so never his idle spin. **Off by default, now on evidence:** we ran it as
+  an experiment (M1) against a mechanical checker and signed the result — on
+  attributed extraction the audit deletes more grounded material than ungrounded,
+  so it does not earn its ~2x compute for that task. See
+  [`insights/018`](insights/018_self_audit_fails_l2_a_bound_beats_a_rerun.md). The
+  faculty stays, disabled, and no mind should enable it for checkable extraction.
+- **Semantic long-term memory** — memories embed (mesh-first via
+  `io.hecate.embed`, then local Ollama, then lexical fallback), persist to disk
+  (text + vectors + links, atomic, width-checked recall), load whole on restart so
+  a reboot neither re-embeds nor forgets, and are auto-injected by cosine
+  similarity against every stimulus. **Honest limit (measured, not assumed):** the
+  *linking* half of Gene's A-Mem is currently inert. Recall is plain cosine top-K —
+  the one-hop chain-following provably cannot change the result (it re-ranks a
+  superset of the global top-K back to the global top-K), so the LLM re-linking
+  that feeds it is dead cost. This is signed in
+  [`insights/`](insights/) (defect 9) and is a known repair, not a claim. The
+  on-disk term file also suits only the low-thousands of memories before it needs
+  `hecate-vector`. Both are scale/repair steps, honestly flagged rather than
+  papered over.
 - **Self-alerts** — the token-clock scheduler: a mind reminds itself after N
   tokens of thought; reminders survive restarts.
 - **The full nine-archive Soul** — charter, lessons, philosophy, journal, ideas,
@@ -200,7 +240,12 @@ his deeper *cognition* as well:
   Knowledge Map always in context, the deep library consulted on demand).
 - **Poison-pill defusal** — untrusted feed/peer text is enveloped and injection
   openers flagged before it enters the mind's context.
-- **Sovereign drones** — convened committees of lens-drones (bounded).
+- **Committees** — a mind convenes a bounded committee of analytical
+  lens-personas over a shared transcript. Not (yet) Gene's *sovereign drones*
+  (full agent instances with their own Soul): the current form is one mind
+  reasoning through several lenses, which the research flags as the aggregation
+  structure insight 001 warns about. Membership-by-delegation across minds is the
+  intended shape, not built.
 - **Self-modification** — the BEAM-safe seat: a mind amends its own genesis
   addendum (how it operates), verified by an adversarial pass before adoption.
 
