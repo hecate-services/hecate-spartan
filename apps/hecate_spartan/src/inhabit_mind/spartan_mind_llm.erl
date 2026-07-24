@@ -76,6 +76,16 @@
 %% HECATE_NEUROEVO_URL at wherever it actually runs.
 -define(NEUROEVO_URL_DEFAULT, "http://127.0.0.1:8600/v1/chat/completions").
 -define(NEUROEVO_MODEL_DEFAULT, <<"faber-tweann">>).
+%% A LOCAL PINNED model, for MEASUREMENT rather than for a mind's daily thinking.
+%% An experiment wants the opposite of the carousel: one model, one version, no
+%% rotation, and no rate limit — so a retry loop cannot pollute a cost ledger, and
+%% a wall-clock figure means something because the machine is fixed. Endpoint and
+%% model are deployment facts, so both are env-driven; the default names an
+%% explicit version rather than a moving `latest' tag, because a pin that drifts
+%% is not a pin. CPU inference is slow, so it gets its own long patience.
+-define(LOCAL_URL_DEFAULT, "http://127.0.0.1:11434/v1/chat/completions").
+-define(LOCAL_MODEL_DEFAULT, <<"mistral:7b-instruct-v0.3-q4_K_M">>).
+-define(LOCAL_TIMEOUT_MS, 600000).
 
 -define(TIMEOUT_MS, 120000).
 -define(MAX_TOKENS, 500).
@@ -166,7 +176,26 @@ provider_config("colibri")  -> #{fmt => openai, url => colibri_url(), model => c
 provider_config("neuroevolved") -> #{fmt => openai, url => neuroevo_url(), model => neuroevo_model(),
                                      keyenv => "NEUROEVO_API_KEY", label => "neuroevolved",
                                      keyless => true, timeout => ?COLIBRI_TIMEOUT_MS};
+%% The measurement endpoint. Deliberately NOT given a `max_tokens' of its own:
+%% the caller's cap applies, because a truncated answer is a parse failure that
+%% the referee counts, not a cheap answer. Keyless — a local serve ignores the
+%% bearer — while still honouring a real key if something fronts it.
+provider_config("local")    -> #{fmt => openai, url => local_url(), model => local_model(),
+                                 keyenv => "LOCAL_API_KEY", label => "local", keyless => true,
+                                 timeout => ?LOCAL_TIMEOUT_MS};
 provider_config(_Unknown)   -> undefined.
+
+local_url() ->
+    case os:getenv("HECATE_LOCAL_URL") of
+        U when is_list(U), U =/= "" -> U;
+        _Unset                      -> ?LOCAL_URL_DEFAULT
+    end.
+
+local_model() ->
+    case os:getenv("HECATE_LOCAL_MODEL") of
+        M when is_list(M), M =/= "" -> unicode:characters_to_binary(M);
+        _Unset                      -> ?LOCAL_MODEL_DEFAULT
+    end.
 
 %% colibrì's endpoint + model are deployment facts (which box, which converted
 %% model), read from the environment with a localhost-serve default.
