@@ -1,0 +1,29 @@
+%% Experiment M1's harness (insight 014): attributed fact extraction, two arms,
+%% mechanical checker, cost ledger, referee.
+%%
+%% A SEPARATE APP, deliberately, and NOT listed in the relx release. The release
+%% is `{release, {hecate_spartan, "0.1.0"}, [hecate_spartan, sasl]}', so nothing
+%% here ships in a container.
+%%
+%% Why that matters, and it is not tidiness. faber learned it at insight 047,
+%% expensively: a runner living inside the thing it measures drifts with it, and a
+%% buggy runner yields a feed that is wrong and internally consistent, which no
+%% amount of analysis on the feed alone can detect. Two faber insights (038, 040)
+%% were retracted as exactly that kind of confound, and no insight before 047
+%% records which engine version produced it.
+%%
+%% This app depends on hecate_spartan for one thing only:
+%% `spartan_mind_llm:provider_config/1', for the pinned endpoint's URL and model.
+%% It uses none of the mind's runtime.
+%%
+%% The frozen corpus lives in `corpus/', not in a `priv/' directory. `priv/' means
+%% runtime assets that ship with a release; this is experiment input that no mind
+%% ever reads.
+{application, m1_assay, [
+    {description, "Experiment M1 harness: self-audit economics (insight 014)"},
+    {vsn, "0.1.0"},
+    {registered, []},
+    {applications, [kernel, stdlib, inets, ssl, jsx, hecate_spartan]},
+    {env, []},
+    {licenses, ["Apache-2.0"]}
+]}.

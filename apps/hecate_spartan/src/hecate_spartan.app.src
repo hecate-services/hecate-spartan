@@ -15,8 +15,11 @@
         %% data_dir/0 but NOT store_id/0, so hecate_om:boot/1 wires no
         %% reckon-db store — state is ETS registries + file Souls.
         hecate_om
-        %% Long-term memory is lexical and in-process (mind_memory); no embedder,
-        %% no vector index, no ONNX. The memory faculty carries the rest.
+        %% Long-term memory is mind_memory: MESH-FIRST embeddings via
+        %% `io.hecate.embed' (hecate-embedder serves 384-dim fastembed), with a
+        %% local HTTP embedder as fallback and lexical matching below that. No
+        %% embed/vector NIF is linked in here, hence no ONNX and no AVX2
+        %% requirement on this image; the embedding happens in the mesh service.
     ]},
     {env, [
         %% On-disk root for the minds' Souls and keypairs. sys.config.src

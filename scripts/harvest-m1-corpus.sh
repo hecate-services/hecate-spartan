@@ -35,7 +35,10 @@
 
 set -euo pipefail
 
-OUT="${1:-apps/hecate_spartan/priv/m1_corpus.jsonl}"
+# Lands in the m1_assay app, which is NOT in the relx release, so the corpus
+# never ships in a container. It is experiment input, not a runtime asset, which
+# is exactly what a `priv/' directory would have wrongly implied.
+OUT="${1:-apps/m1_assay/corpus/m1_corpus.jsonl}"
 MIN_CHARS=200
 MAX_CHARS=1500
 
