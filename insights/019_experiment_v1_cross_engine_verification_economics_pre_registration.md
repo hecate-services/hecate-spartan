@@ -1,7 +1,10 @@
-# 019 — Experiment V1: peer verification economics (pre-registration)
+# 019 — Experiment V1: cross-engine verification economics (pre-registration)
 
-**Status: DRAFT 1, pre-gate. Not built. Not sized.** Programme S5 (inter-agent
+**Status: DRAFT 1, pre-gate. Not built. Not sized.** Programme S5 (cross-engine
 verification economics), proposed; S1 to S4 are taken.
+
+Named "cross-engine", not "peer", deliberately. The experiment swaps the **engine**
+in the verify seat, and an engine is not an agent. See defect 5.
 
 The question: **on a task where self-verification has been signed a failure, does a
 *different* model in the verify seat avoid that failure, and does it pay against a
@@ -35,6 +38,16 @@ Those two explanations are cheap to tell apart, and the honest move is to spend 
 hour telling them apart before spending a corpus and a day on the full experiment.
 That is what this note registers: the cheap test first, the full experiment only if
 the cheap test says it is worth running.
+
+One more thing worth saying plainly, because the earlier draft got it backwards. It
+claimed that using a second AI meant asking *another agent*, and that this was a
+first for the system. It is not. Swapping which model answers is like asking the
+same person to think again in a different mood: it all happens inside one mind, on
+one machine, and nobody else hears about it. Asking a genuinely different agent
+would mean sending the draft to another entity out on the network, one with its own
+name, its own history and its own opinions, and waiting for its answer. That is a
+different and much more interesting thing, this system has never done it, and it
+does not yet have the plumbing for it. This note keeps the two apart on purpose.
 
 ## What 018 does to the question
 
@@ -109,10 +122,11 @@ bind the pre-flight in advance.
 - **It runs on the existing instrument, with 017 fix 1 in place** (below), so a
   truncation artefact cannot be mistaken for a deletion pattern.
 
-## Four defects that a renumber does not fix
+## Five defects that a renumber does not fix
 
 These are in the design, not in the premise, and they would have survived into any
-version of this experiment.
+version of this experiment. The fifth is the most consequential and is listed last
+only because it is easiest to see once the others are understood.
 
 ### 1. The context reduction the whole design rests on does not exist in the instrument
 
@@ -198,6 +212,68 @@ should be stated and defended, not hidden. For a provenance-first commons 1:1 is
 the conservative choice, since a hallucination-averse utility would make the bar
 easier to clear, not harder.
 
+### 5. The intra-agent / inter-agent axis is mislabeled, and the experiment never leaves one agent
+
+The stale draft's headline justification was that it crosses an architectural
+boundary nothing else has crossed: "MINDfulness gates inwards (same model, same
+context); Influence gates outwards (different model, reduced context)", described as
+"the inter-mind verification line the architecture has never tested".
+
+It does not cross it. **A different model is not a different mind.**
+
+Model B has no DID, no Soul, no charter, no lessons, no inbox and no standing in the
+society. It is a second *engine*, called by the same mind, inside the same turn, in
+the same process, on the same node. Nothing is published, nothing is routed, no peer
+is consulted, and no other entity is even aware it happened. Measured against the
+system's own definition of an agent (a registered entity with a keypair, a Soul and
+a mesh identity), swapping the verify seat is an **intra-agent** change. The draft
+makes a claim about *models* and dresses it as a claim about *agents*.
+
+The same reading corrects the draft's other classification. It says committees "stay
+inside one mind's context", which is right, but the code makes it stronger than the
+draft realised: `committee.erl` drones are **prompt personas**, not peers. `lenses/0`
+lists five system messages (the operator, the skeptic, the adversary, the historian,
+the economist); every drone thinks through `spartan_mind_llm:reason_messages/1`, the
+same carousel the convening mind uses; the committee is one `gen_server` owned by one
+convener, ephemeral and single-purpose, dissolving at adjournment. A committee
+*publishes* outward (drone lines to its mesh topic, the scribe's report to the
+agora), but it *consults* nobody. Its output is inter-agent; its deliberation is
+entirely intra-agent.
+
+So the real taxonomy of verification in this system is four rungs, not two:
+
+| Rung | Mechanism | Status |
+|---|---|---|
+| Intra-agent, same engine, same context | MINDfulness (`mindfulness.erl`) | **signed dead on attributed extraction** (018) |
+| Intra-agent, same engine, N personas | committee (`convene_committee/`) | built, never measured |
+| Intra-agent, **second engine** | what V1 actually tests | this note |
+| **Inter-agent, a peer mind on the mesh** | nothing | unbuilt, untested |
+
+The first three are engineering knobs that any single-process agent could have. Only
+the fourth needs a mesh, DIDs, Souls and a commons, which is to say: **only the
+fourth tests anything this architecture is uniquely for.** Its decorrelation source
+is not pretraining lineage but **biography**. A peer mind disagrees because it has a
+different charter, different lessons and a different founding brief, and that is a
+kind of independence no model swap can simulate.
+
+It is also unbuilt. There is no request/response binding between minds:
+`route_message` is fire-and-forget into an inbox, the agora is a broadcast, and
+`federation_ask` handles inbound *visitor* questions into the agora, not mind asking
+mind. A real inter-agent gate needs that primitive first, plus an answer to what a
+sovereign entity owes a peer that asks it to check something, which is a governance
+question and not only a wiring one. Recording it here as the frontier, not smuggling
+it into V1's scope.
+
+Finally, this is why "Influence" is the wrong word for any of the four rungs. If the
+system has an Influence faculty at all, its honest referent is intra-agent and
+different from all of the above: **how far this mind lets another's view move its
+own**, which is deference and susceptibility, a modulator in the sense
+`DESIGN_MIND_FACULTIES.md` reserves for affect. The fleet has already shown it once,
+in the entity that received an operator's first-contact message and consciously
+deferred it with an explicit sovereignty audit. That is a real faculty and possibly a
+measurable one. It is not a second opinion from a second engine, and calling both
+"Influence" is the folk-label collapse the design doc exists to forbid.
+
 ## Everything else the stale draft got wrong, briefly
 
 - **The corpus is spent.** The draft specified "no new corpus, M1's frozen snapshot
@@ -252,9 +328,9 @@ easier to clear, not harder.
   already means something else and more interesting in this system: one mind
   changing another's behaviour in the agora, which is a social measure this
   experiment does not touch. Naming it Influence pre-books a claim the experiment
-  cannot earn, which is the over-reach 013 had to retract. The function is an
-  **inter-agent verification gate on a drafted output**. Named for what it does:
-  `HECATE_MIND_PEER_VERIFY`.
+  cannot earn, which is the over-reach 013 had to retract. Per defect 5 the function
+  is not a peer gate either: it is a **second-engine verification gate on a drafted
+  output, inside one mind**. Named for what it does: `HECATE_MIND_CROSS_ENGINE_VERIFY`.
 
 ## What survives from the stale draft, and is worth keeping
 
@@ -277,22 +353,25 @@ Not frozen. Recorded so the gate has something concrete to reject.
 
 - **Arms, paired per item on a fresh corpus:** `sp` (single pass, model A);
   `dv` (self-verify, model A, the 018 arm, **reported as the known failure, not as
-  a comparator**); `pv` (peer verify, model B in the verify seat, identical
+  a comparator**); `xv` (cross-engine verify, model B in the verify seat, identical
   `verify_system` prompt, identical message shape); `sp_B` (single pass, model B, to
   measure B's own extraction quality and the error overlap that tests the
   decorrelation precondition).
-- **Optional fifth arm, only if the context factor is kept:** `pv_full`, model B
+- **Optional fifth arm, only if the context factor is kept:** `xv_full`, model B
   with the production full context, which is the cell that makes the 2x2 complete
   and the only way "context poverty" becomes a measurable claim rather than a story.
   It doubles as the arm whose result actually applies to `mindfulness.erl`.
-- **Primary criterion:** `pv` against `sp`, discrimination, with the noise treatment
+- **Primary criterion:** `xv` against `sp`, discrimination, with the noise treatment
   applied to every leg. The primary is not marginal, because after 018 there is no
   incumbent gate to be marginal against.
-- **Secondary, reported not adjudicated:** `pv` against `dv`, and the token ledger
-  including the `pv`/`dv` ratio. The peer's verify context is shorter than the
-  production self-verify context, so peer verification may be *cheaper* as well as
-  different. A design that can only sign "does not earn its place" would miss
-  "matches the incumbent at lower cost", and that is a decision-grade fact.
+- **Secondary, reported not adjudicated:** `xv` against `dv`, and the token ledger
+  including the `xv`/`dv` ratio. The cross-engine verify context is shorter than the
+  production self-verify context, so it may be *cheaper* as well as different. A
+  design that can only sign "does not earn its place" would miss "matches the
+  incumbent at lower cost", and that is a decision-grade fact.
+- **Explicitly out of scope:** the inter-agent rung. Routing a draft to a peer mind
+  with its own DID, Soul and charter is a different experiment on an unbuilt
+  primitive, and V1 must not be reported as evidence about it.
 - **Sizing:** from the pre-flight, at 80% power, off the upper bound of the variance
   estimate.
 - **Both signed sentences pre-written before the run**, per the 014 method.
@@ -308,8 +387,15 @@ Not frozen. Recorded so the gate has something concrete to reject.
    grounding-with-attribution only expose errors both models can see?
 4. Is a new programme (S5) right, or is this S2 reopened, given 018 declared S2
    closed on L2?
-5. On a pass, what deployment decision changes, and is it affordable? A peer gate
-   means a second model in the loop on every gated turn.
+5. On a pass, what deployment decision changes, and is it affordable? A cross-engine
+   gate means a second model in the loop on every gated turn.
+6. Given defect 5, is the cross-engine rung worth a corpus at all, or should the
+   programme skip to the inter-agent rung, which is the only one that needs this
+   architecture? Against skipping: the primitive is unbuilt, the governance question
+   is unanswered, and a null on the cheap rung would be informative about the
+   expensive one. For skipping: three rungs of intra-agent verification measured in
+   sequence is a lot of compute spent proving that a single process cannot check
+   itself, which 018 arguably established once already.
 
 ## Next
 
