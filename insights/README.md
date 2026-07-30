@@ -43,6 +43,7 @@ the numerical programme (001-013), which is closed.
 | [016](016_experiment_m1_result_an_instrument_failure.md) | Experiment M1: the result is an instrument failure, not a verdict | M1 ran; the FAIL number is unsignable. Three instrument defects, two found only at the CLAIM gate: the frozen truncation-as-parse-failure clause was never built (and truncation is asymmetric toward draft_verify, so it manufactured the 15.7-point parse gap that blocked signing), raw per-item outputs were discarded so it can't be attributed retrospectively, and n=79 was underpowered to evaluate L1 at all. The one power-robust finding: draft_verify deletes grounded material 8:1 over ungrounded, so mindfulness stays off on evidence. Re-registered as M1′. Green is not clean. |
 | [017](017_experiment_m1_prime_pre_registration.md) | Experiment M1′: the repaired instrument (pre-reg, SUPERSEDED by 018, not built) | Fixes 016's three defects. The gate rejected draft 1's sizing twice: it was 50% power (a coin flip), and L1 is un-makeable-fair at its own 50% threshold for *any* n (a symmetric point estimate passes half the time regardless). Reframed to an L2-validity run near 108 items. Then superseded: a bound made even that unnecessary. Fix 1 + fix 2 stay on the shelf for a future measured-L2 question. |
 | [018](018_self_audit_fails_l2_a_bound_beats_a_rerun.md) | Self-audit fails L2: a defect-robust bound, and no re-run | **SIGNED.** draft_verify deletes grounded material over ungrounded, and no worst-case counterfactual on the 29 unscored items can flip it (they would need to be 5.6× denser, perfectly discriminating, zero-collateral, and truncated against the physics). The bound uses only the clean 79 plus a content ceiling, so it survives every defect 016 declared. L2 signed, L1 unresolved, mindfulness-off now on evidence. A bound beat a re-run: build nothing. |
+| [019](019_experiment_v1_peer_verification_economics_pre_registration.md) | Experiment V1: peer verification economics (pre-reg, DRAFT, pre-gate) | Self-verification is signed dead (018), so does a *different* model in the verify seat avoid the failure? Two mechanisms explain 018 and only one makes a peer useful: self-blindness (a stranger helps) or prompt over-compliance (a "remove every field you cannot confirm" instruction makes any small model over-delete, peer included). Registers a cheap non-signable pre-flight to fork them **before** spending a corpus, applying 018's own meta-result to its successor. Also records four design defects inherited from a stale draft, the first of which is that the context reduction the design rested on does not exist in the instrument. |
 
 ## The one line, so far
 
@@ -53,6 +54,12 @@ methods earned their keep along the way: the CLAIM gate catching a green run who
 checker silently skipped a frozen clause (016), and a defect-robust arithmetic
 bound replacing a three-hour re-run (018). L1 unresolved and, at its threshold,
 unresolvable by the frozen rule.
+
+The open successor is **Programme S5 (inter-agent verification economics)**, note
+019: self-verification failed, so does peer verification fail the same way or a
+different way? It is deliberately gated behind a cheap diagnostic rather than a
+corpus, because the failure 018 signed has two candidate mechanisms and only one of
+them makes a second model worth paying for.
 
 ## Earlier note
 
