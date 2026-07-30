@@ -1,10 +1,12 @@
 # 019 — Experiment V1: cross-engine verification economics (pre-registration)
 
 **Status: DRAFT 2, DESIGN-gated. Fable REJECTED draft 1 (round 15): REDESIGN.
-Nothing built.** Programme placement split at the gate: the diagnostic ladder below
-is **Programme S2's epilogue**, because it re-attributes S2's own signed result; the
-corpus experiment, if it ever earns one, is **Programme S5 (cross-engine
-verification economics)**. S1 to S4 are taken.
+Ladder rung D0 BUILT AND RUN 2026-07-31 — mechanism (d) eliminated, see below.
+D1 next; the corpus experiment remains unbuilt and unearned.** Programme placement
+split at the gate: the diagnostic ladder below is **Programme S2's epilogue**,
+because it re-attributes S2's own signed result; the corpus experiment, if it ever
+earns one, is **Programme S5 (cross-engine verification economics)**. S1 to S4 are
+taken.
 
 Named "cross-engine", not "peer", deliberately. The experiment swaps the **engine**
 in the verify seat, and an engine is not an agent. See defect 5.
@@ -215,6 +217,69 @@ the checker mechanical, so there is no leakage channel into a new model's readou
 licenses a quantity learned from run 1 informing *sizing and design*, never
 *selection*. Shopping means re-scoring seen data to select a verdict; a pre-committed
 fork over a full partition that cannot emit a verdict is its opposite.
+
+## D0 result: retyping loses nothing (2026-07-31, NOT SIGNABLE)
+
+Ran on all 35 calibration items, none failed. Pinned local `qwen2.5:7b-instruct-q4_K_M`
+at temperature 0. Artefacts committed in `hecate-spartan-programmes` under
+`corpora/m1/d0-*-NOT-SIGNABLE.*`.
+
+```
+grounded/item     draft 1.571  ->  copy 1.629      change -0.057
+ungrounded/item   draft 0.343  ->  copy 0.286      change +0.057
+
+items where the copy LOST a grounded field:   0 of 35
+33 copies byte-identical to the draft, 2 gained, 0 lost
+0 truncated passes, 0 failed items, 19,519 tokens
+```
+
+**Mechanism (d), regeneration loss, is eliminated.** Not one item in thirty-five
+lost a grounded field to being retyped. The change is slightly *negative*: asked
+only to reproduce its own draft, the model returned marginally more grounded and
+fewer ungrounded fields than it had written. Against the 0.532 grounded fields per
+item that draft-then-verify destroyed, regeneration accounts for none of it.
+
+So the destruction 018 signed is done by the verify **instruction**, not by the
+model fumbling a re-emission of the document. The hypothesis that the damage was a
+serialization artefact, which would have made the whole cross-engine question
+malformed, is dead. Two mechanisms remain live and D1 separates them.
+
+Per the pre-committed branch table this is the "D0 loses little" branch, and its
+consequence is **run D1**. It is not a licence for the corpus experiment: D1 and D2
+both still have to clear.
+
+**Instrument readings.**
+
+- **Fix 1 fired zero times.** No pass truncated at the 2000-token cap. So the cap is
+  comfortable for this task, and M1's truncation problem looks specific to its
+  longer confirmatory articles rather than general to the instrument. The detector
+  is now in place either way, which is the point of building it before it is needed.
+- **Instrument defect 3 cost 2 items in 35.** Found by running D0's smoke item, not
+  by reading: `self_audit_extract:to_field/1` guards on `is_binary(V)`, so a field
+  whose `value` the model emits as a JSON **number** rather than a string is dropped
+  into neither grounded, nor ungrounded, nor excluded. It vanishes untraced, and an
+  item whose extraction was entirely numeric scores zero fields and contributes
+  nothing to either mean. `number` is one of the four field classes, so this is not
+  an edge case.
+
+  **Not repaired.** 014 requires a signed amendment rather than a quiet retune, and
+  the repair is not cosmetic: a bare `100000` does not occur inside the span
+  `"up to 100,000 jobs"`, so coercing numerics to text would newly mark them
+  UNGROUNDED and move the base rate the void band is measured against. Counted and
+  reported instead, so the run that pays the cost shows it. Two items in
+  thirty-five is smaller than the smoke item implied but it is not nothing, and any
+  experiment that needs a measured base rate has to settle it first.
+
+**One orientation reading, which settles nothing because it mixes slices.** This
+slice runs a base ungrounded rate of **0.179** and a grounded-to-ungrounded
+prevalence of **4.58 : 1**, against the 0.145 and 5.9 : 1 this note derived above
+from 016 and 018. Both differences push the anti-discrimination reading in the
+*supporting* direction, since a lower prevalence baseline means the 8.4 : 1 that 018
+observed exceeds it by more, and 0.179 sits well clear of the 0.107 floor below
+which the reading dies. But this is the calibration slice and 018's ratio is from
+the confirmatory one, which is exactly the denominator mixing the arithmetic section
+warned about. It is a first independent read on a figure that was derived rather
+than measured. It is not a confirmation of it.
 
 ## Five defects that a renumber does not fix
 
@@ -501,4 +566,18 @@ meta-result applied forward.
 
 ## Next
 
-Build 017 fix 1 and fix 2. Run D0. Nothing else until D0 reports.
+017 fix 1 and fix 2 are built. D0 has run and eliminated mechanism (d).
+
+**Run D1**, the keep-instruction: the same model and the same message shape, with
+the verify system prompt reframed from "remove every field you cannot confirm" to
+"keep every field you can confirm". One variable, the polarity of the default.
+
+- If D1 discriminates where the remove-framing did not, mechanism (b) was the
+  channel, the deployable repair is one sentence of prompt, and no second engine is
+  ever needed. V1 dies usefully.
+- If D1 also destroys grounded material, mechanism (c), the capability floor, is
+  live: confirming a field means re-establishing a long verbatim substring by
+  generation, and this model class cannot. That survives an engine swap too, and
+  D2 would then be measuring a property of the task rather than of the reviewer.
+
+Nothing else until D1 reports.
