@@ -1,10 +1,11 @@
 # 019 — Experiment V1: cross-engine verification economics (pre-registration)
 
 **Status: DRAFT 2, DESIGN-gated. Fable REJECTED draft 1 (round 15): REDESIGN.
-Ladder rungs D0 and D1 BUILT AND RUN 2026-07-31: (d) eliminated, (b) sized at four
-fifths of the magnitude but none of the direction, (c) now the live candidate. The
-corpus experiment remains unbuilt, and on this evidence unearned; that reading is
-with the gate.** Programme placement
+Ladder rungs D0 and D1 BUILT AND RUN 2026-07-31; Fable r16 ruled the D1 reading
+CLAIM OVERREACHES and it is withdrawn. What stands: (d) eliminated; (b) is most of
+the magnitude; the residual is below this slice's resolution and unattributable.
+V1 is not earned, on the no-consumer ground rather than on a mechanism. **D2 is
+undecided, not dead.** Programme placement
 split at the gate: the diagnostic ladder below is **Programme S2's epilogue**,
 because it re-attributes S2's own signed result; the corpus experiment, if it ever
 earns one, is **Programme S5 (cross-engine verification economics)**. S1 to S4 are
@@ -231,9 +232,15 @@ grounded/item     draft 1.571  ->  copy 1.629      change -0.057
 ungrounded/item   draft 0.343  ->  copy 0.286      change +0.057
 
 items where the copy LOST a grounded field:   0 of 35
-33 copies byte-identical to the draft, 2 gained, 0 lost
+grounded count unchanged on 33 items, 2 gained, 0 lost
+28 of 35 responses byte-identical to the draft
 0 truncated passes, 0 failed items, 19,519 tokens
 ```
+
+(Corrected at the gate: an earlier version of this section said "33 copies
+byte-identical". 33 is the number of items whose grounded *count* was unchanged.
+Byte-identical is 28. The permanent record should not say "byte" when it means
+"field".)
 
 **Mechanism (d), regeneration loss, is eliminated.** Not one item in thirty-five
 lost a grounded field to being retyped. The change is slightly *negative*: asked
@@ -341,11 +348,28 @@ finding it wrong, and the model answers by **explaining itself**, which breaks t
 output-only-JSON contract. `strip_fences/1` spans the first brace to the last, so a
 second appended object makes the whole response unparseable.
 
-**The bias has a known direction and it cuts against the friendly reading.** A keep
-pass fails precisely when the model wanted to justify a deletion, so the excluded
-items are drop-heavy and the surviving 29 understate both drops. The true grounded
-drop under keep-framing is higher than 0.103, which pushes further from (b) and
-closer to (c).
+**RETRACTED at the gate (Fable r16), and the retraction matters more than the claim
+did.** This section originally argued that a keep pass fails precisely when the model
+wants to justify a deletion, so the excluded items are drop-heavy and the surviving
+29 *understate* both drops. That is false, and the retained raw falsifies it. Reading
+all six failures:
+
+- **All six drop ZERO fields in their first balanced JSON object.** Every one carries
+  a complete, well-formed object whose field list matches the draft exactly.
+- Four of the six then append the junk suffix `\udu{1}`, a token artifact and not a
+  justification of anything.
+- One appends deletion commentary; its primary object still drops nothing.
+- One appends an attempted snippet correction, which is a would-be *gain*.
+
+So the excluded items are drop-**zero**, and salvaging them (first balanced object
+rather than first-brace-to-last-brace) lowers both means to roughly 0.086 grounded
+and 0.057 ungrounded over 35. **The surviving 29 OVERSTATE both drops.** The bias
+runs toward (b) and away from (c), the exact opposite of what was written here.
+
+The lesson is the sharper one. This section said fix 2 was built so a parse gap could
+be *read* rather than inferred, and then inferred the direction anyway, from a single
+example, without opening the other five. Retention is worth nothing if the analyst
+does not use it.
 
 Fix 1 is working as intended: these are classified malformed rather than truncated,
 and inspection confirms they genuinely are. Zero passes truncated across both rungs.
@@ -355,14 +379,74 @@ Slice mixing, flagged as ever: 0.532 is from the confirmatory slice and 0.103 fr
 calibration, so the four-fifths figure is orientation and not a measurement. Base
 ungrounded rate on the scored subset is 0.158, against D0's 0.179 across all 35.
 
-### Proposed consequence, NOT yet gated
+### "(c) is the live channel" is WITHDRAWN (Fable r16: CLAIM OVERREACHES)
 
-Mechanism (c) survives an engine swap by construction. If it is the live channel,
-**D2 measures a property of the task rather than of the reviewer**, which is the
-consequence this note already wrote down for that outcome, and the corpus experiment
-is not earned. That is a stronger claim than either pre-committed branch, it rests
-on an unanticipated result, and it is exactly the kind of drift the gate exists to
-catch. It goes to the adversary before it goes anywhere else.
+It went to the adversary before it went anywhere else, which is the only part of
+this that worked as intended. Four grounds, any one sufficient.
+
+**The signal is one net field, and it is noise.** Per-item, the difference between
+grounded drops and ungrounded drops is positive on 5 items, negative on 3, and zero
+on 21. A two-sided sign test gives **p = 0.73**. The direction the claim rests on
+cannot be distinguished from chance. 018's precedent does not rescue it: 018 signed
+a direction under a worst-case bound sitting a factor of eight from the boundary,
+whereas here the analogous salvage moves the estimate *toward* zero.
+
+**The note's own per-field frame reverses the sign.** The arithmetic section above
+establishes that the correct null for a blind verifier is prevalence-proportional
+deletion, and indicts the remove-framing on per-field rates. Apply that same frame
+to D1:
+
+```
+grounded removed    3 / 48  =  6.25%
+ungrounded removed  2 /  9  = 22.22%
+                    -> 3.56x, the keep pass PRO-discriminates
+```
+
+The "does not discriminate" reading used raw per-item drops, which is precisely the
+frame this note indicted two sections earlier. Applying one frame to 018 and a
+different one to D1 is the error, and it is mine.
+
+**(c)'s one free prediction fails.** If the floor is an inability to re-establish
+long verbatim spans, the grounded fields that get dropped should skew long. From the
+retained records, grounded fields the keep pass retained have mean snippet 68.2
+characters (n=45); those dropped or edited, 61.5 (n=6). No signature, at zero cost.
+
+**Residual (b) and (c) are not separable in this design, and the claim needs them
+separated.** The keep prompt still contains a drop clause. Residual over-compliance
+with *that* produces exactly (c)'s observable at this scale. Only (c) makes D2 "a
+property of the task"; a residual of (b) is prompt-fixable and model-contingent. A
+design that cannot tell them apart cannot utter the "therefore".
+
+### A fifth mechanism, which neither draft nor gate had named
+
+**(e) checker-frame mismatch through the correction affordance.** All three
+second-pass prompts license snippet correction, and an *edit* flips the checker's
+label with no keep-or-drop decision taken at all. It is visibly live: two
+ungrounded-to-grounded conversions in D1, and two in D0 *despite* the copy prompt
+explicitly forbidding correction. At this n, conversions (2) are the same order as
+removals (~6). Neither (b) nor (c) covers it, and no experiment has isolated it.
+
+### What the ladder does support
+
+The defensible sentence needs no mechanism attribution at all:
+
+> No framing tested removes more bad material than good in absolute terms. The
+> residual after the polarity flip is below this slice's resolution and cannot be
+> attributed among (a), (c), residual (b), (e) and noise. And no consuming pipeline
+> can be named, so V1's pass sentence is unwriteable regardless of what D2 shows.
+
+That stops the corpus experiment on its own, and the last clause stopped it before
+D1 ran.
+
+**D2 is a separate decision and it is undecided, not dead.** (a) is the only
+mechanism still untested, D2 is the only rung that tests it, and this note's own
+branch table says a D2 that discriminates is the single branch that could ever earn
+V1. Killing it on one noisy net field, propped by a bias argument the raw refutes,
+forecloses that for no saving. It is an economics call: an afternoon of free CPU
+plus the real cost, which is qualifying a second local family after
+`mistral:7b-instruct-v0.3` failed the formatter screen, bought for mechanism
+knowledge that scopes the whole verification roadmap including the peer rung. V1 is
+already dead either way on the no-consumer ground.
 
 ## Five defects that a renumber does not fix
 
@@ -653,19 +737,24 @@ meta-result applied forward.
 instruction's polarity governs four fifths of the magnitude and none of the
 direction, which points at mechanism (c).
 
-Three things, in order, and none of them is D2.
+The gate has run and the D1 reading is withdrawn. What is left, in order.
 
-1. **The gate.** "D2 is not earned" is a stronger claim than either pre-committed
-   branch and it rests on an unanticipated result. It goes to the adversary first.
-2. **Decide whether D1 needs re-running clean.** Its own 17-point differential parse
-   gap is over 014's blocking threshold, and the fix is one clause forbidding
-   commentary in the keep prompt. The bias direction is known and unfavourable to
-   the conclusion, so a re-run would most likely strengthen it rather than overturn
-   it, which is an argument for *not* spending the compute. That is the same
-   question 018 answered with a bound rather than a run, and it should be answered
-   the same way: ask whether the run is necessary at all before sizing one.
+1. **The missing within-slice control, and it is the cheapest thing here.** The
+   four-fifths figure compares a calibration drop against a confirmatory one, and
+   it cannot be repaired from retained data: M1's per-item raw was never persisted,
+   which is what fix 2 exists to prevent recurring. A remove-framing pass over the
+   same 35 calibration items through the existing `paired/4` harness costs about
+   17k tokens of free local CPU and supplies the denominator. It is also the only
+   observation that could put (c) back on the table: a within-slice remove drop near
+   0.5 **plus** a salvage-corrected D1 still showing per-field anti-discrimination.
+2. **Fix the keep prompt's parse gap if D1 is ever re-run**, with one clause
+   ("output exactly one JSON object, no commentary") and a salvage rule taking the
+   first *balanced* object rather than first-brace-to-last-brace, which would have
+   scored all 35 here. Note the direction: salvage moves the result toward (b), so a
+   clean re-run is likelier to weaken the withdrawn reading than to restore it.
 3. **Instrument defect 3 needs a signed amendment** before any experiment that
-   depends on a measured base rate. It is two items in thirty-five here, and it is
-   unfixed only because 014 forbids a quiet retune, not because it is harmless.
-
-D2 runs only if the gate says the reviewer question survives (c).
+   depends on a measured base rate. Two items in thirty-five in both rungs, unfixed
+   only because 014 forbids a quiet retune, not because it is harmless.
+4. **D2 remains a live option**, on economics rather than on mechanism. It tests the
+   only mechanism nobody has touched, and its real cost is qualifying a second local
+   family after `mistral:7b-instruct-v0.3` failed the formatter screen.
