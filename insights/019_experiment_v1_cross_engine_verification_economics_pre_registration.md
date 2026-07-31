@@ -1,8 +1,10 @@
 # 019 — Experiment V1: cross-engine verification economics (pre-registration)
 
 **Status: DRAFT 2, DESIGN-gated. Fable REJECTED draft 1 (round 15): REDESIGN.
-Ladder rung D0 BUILT AND RUN 2026-07-31 — mechanism (d) eliminated, see below.
-D1 next; the corpus experiment remains unbuilt and unearned.** Programme placement
+Ladder rungs D0 and D1 BUILT AND RUN 2026-07-31: (d) eliminated, (b) sized at four
+fifths of the magnitude but none of the direction, (c) now the live candidate. The
+corpus experiment remains unbuilt, and on this evidence unearned; that reading is
+with the gate.** Programme placement
 split at the gate: the diagnostic ladder below is **Programme S2's epilogue**,
 because it re-attributes S2's own signed result; the corpus experiment, if it ever
 earns one, is **Programme S5 (cross-engine verification economics)**. S1 to S4 are
@@ -280,6 +282,87 @@ which the reading dies. But this is the calibration slice and 018's ratio is fro
 the confirmatory one, which is exactly the denominator mixing the arithmetic section
 warned about. It is a first independent read on a figure that was derived rather
 than measured. It is not a confirmation of it.
+
+## D1 result: polarity is most of the damage and none of the direction (2026-07-31, NOT SIGNABLE)
+
+Same 35 calibration items, same pinned model, same message shape. The only change
+from the arm 018 signed is the polarity of the verify prompt's default: keep unless
+disconfirmed, rather than drop unless confirmed.
+
+```
+grounded/item     draft 1.655  ->  keep 1.552      dropped 0.103
+ungrounded/item   draft 0.310  ->  keep 0.241      dropped 0.069
+
+discriminates (dropped more ungrounded than grounded)?   NO
+5 items lost grounded, 3 lost ungrounded, 21 untouched
+scored 29 of 35, 6 FAILED (all on the keep pass), 0 truncated, 16,986 tokens
+```
+
+**Mechanism (b) is real and large.** Against the 0.532 grounded fields per item the
+remove-framing destroyed, the keep-framing drops 0.103. The instruction's default
+under doubt accounts for roughly four fifths of the magnitude. That is a big effect
+from one sentence of prompt.
+
+**And it does not answer what 018 signed.** 018's L2 failure was a *direction*: more
+grounded removed than ungrounded. That direction survives the flip intact, 0.103
+against 0.069. Told to keep unless disconfirmed, the model still removes more good
+material than bad.
+
+That is what mechanism **(c), the capability floor**, looks like. Confirming a field
+means re-establishing a long verbatim substring by generation; this model class
+cannot do it; so its errors run the same way whichever default it is given. The
+polarity governs how *much* it removes, not *which* fields it removes.
+
+### This landed between the two pre-committed branches, and that is recorded rather than smoothed over
+
+The branch table offered "D1 discriminates" and "D1 also destroys". The result is
+neither: it destroys far less and still fails to discriminate. Writing a two-way
+fork for a quantity that is plainly continuous was a defect in the table, of the
+same family as the non-exhaustive fork the gate caught for D2 (the inert branch).
+The reading below is therefore an *inference* from an unanticipated outcome, not the
+discharge of a pre-committed one, and it carries less weight for exactly that
+reason.
+
+### The measurement defect, which is this run's own
+
+**6 of 35 keep passes emitted unparseable output, against 0 of 35 draft passes and
+0 of 35 copy passes in D0.** A 17-point differential, well over 014's 5-point
+blocking threshold. This is the first time in the programme the mechanism behind a
+parse gap could be *read* rather than inferred, which is precisely what fix 2 was
+built for. From the retained raw:
+
+```
+{"fields":[{"class":"number","value":"four years", ...}]}
+poon {"fields":[],"error":"The draft snippet 'vast forests of maritime pi...
+```
+
+The keep prompt instructs the model to drop a field only after checking it and
+finding it wrong, and the model answers by **explaining itself**, which breaks the
+output-only-JSON contract. `strip_fences/1` spans the first brace to the last, so a
+second appended object makes the whole response unparseable.
+
+**The bias has a known direction and it cuts against the friendly reading.** A keep
+pass fails precisely when the model wanted to justify a deletion, so the excluded
+items are drop-heavy and the surviving 29 understate both drops. The true grounded
+drop under keep-framing is higher than 0.103, which pushes further from (b) and
+closer to (c).
+
+Fix 1 is working as intended: these are classified malformed rather than truncated,
+and inspection confirms they genuinely are. Zero passes truncated across both rungs.
+Instrument defect 3 cost 2 items of 29, still unrepaired per 014's amendment rule.
+
+Slice mixing, flagged as ever: 0.532 is from the confirmatory slice and 0.103 from
+calibration, so the four-fifths figure is orientation and not a measurement. Base
+ungrounded rate on the scored subset is 0.158, against D0's 0.179 across all 35.
+
+### Proposed consequence, NOT yet gated
+
+Mechanism (c) survives an engine swap by construction. If it is the live channel,
+**D2 measures a property of the task rather than of the reviewer**, which is the
+consequence this note already wrote down for that outcome, and the corpus experiment
+is not earned. That is a stronger claim than either pre-committed branch, it rests
+on an unanticipated result, and it is exactly the kind of drift the gate exists to
+catch. It goes to the adversary before it goes anywhere else.
 
 ## Five defects that a renumber does not fix
 
@@ -566,18 +649,23 @@ meta-result applied forward.
 
 ## Next
 
-017 fix 1 and fix 2 are built. D0 has run and eliminated mechanism (d).
+017 fix 1 and fix 2 are built. D0 eliminated mechanism (d). D1 shows the
+instruction's polarity governs four fifths of the magnitude and none of the
+direction, which points at mechanism (c).
 
-**Run D1**, the keep-instruction: the same model and the same message shape, with
-the verify system prompt reframed from "remove every field you cannot confirm" to
-"keep every field you can confirm". One variable, the polarity of the default.
+Three things, in order, and none of them is D2.
 
-- If D1 discriminates where the remove-framing did not, mechanism (b) was the
-  channel, the deployable repair is one sentence of prompt, and no second engine is
-  ever needed. V1 dies usefully.
-- If D1 also destroys grounded material, mechanism (c), the capability floor, is
-  live: confirming a field means re-establishing a long verbatim substring by
-  generation, and this model class cannot. That survives an engine swap too, and
-  D2 would then be measuring a property of the task rather than of the reviewer.
+1. **The gate.** "D2 is not earned" is a stronger claim than either pre-committed
+   branch and it rests on an unanticipated result. It goes to the adversary first.
+2. **Decide whether D1 needs re-running clean.** Its own 17-point differential parse
+   gap is over 014's blocking threshold, and the fix is one clause forbidding
+   commentary in the keep prompt. The bias direction is known and unfavourable to
+   the conclusion, so a re-run would most likely strengthen it rather than overturn
+   it, which is an argument for *not* spending the compute. That is the same
+   question 018 answered with a bound rather than a run, and it should be answered
+   the same way: ask whether the run is necessary at all before sizing one.
+3. **Instrument defect 3 needs a signed amendment** before any experiment that
+   depends on a measured base rate. It is two items in thirty-five here, and it is
+   unfixed only because 014 forbids a quiet retune, not because it is harmless.
 
-Nothing else until D1 reports.
+D2 runs only if the gate says the reviewer question survives (c).
