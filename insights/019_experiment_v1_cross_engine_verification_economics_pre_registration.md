@@ -1,11 +1,14 @@
 # 019 — Experiment V1: cross-engine verification economics (pre-registration)
 
 **Status: DRAFT 2, DESIGN-gated. Fable REJECTED draft 1 (round 15): REDESIGN.
-Ladder rungs D0 and D1 BUILT AND RUN 2026-07-31; Fable r16 ruled the D1 reading
-CLAIM OVERREACHES and it is withdrawn. What stands: (d) eliminated; (b) is most of
-the magnitude; the residual is below this slice's resolution and unattributable.
-V1 is not earned, on the no-consumer ground rather than on a mechanism. **D2 is
-undecided, not dead.** Programme placement
+Ladder rungs D0, D1 and the DR remove control BUILT AND RUN 2026-07-31. Two gate
+rounds (r16, r17) each ruled my reading CLAIM OVERREACHES and each was upheld on
+independent recomputation. What stands: (d) eliminated; the r15 anti-discrimination
+arithmetic **does not replicate on its grounded limb** (39.6% derived against 13.6%
+measured, p = 1.7e-4) while its ungrounded limb replicates almost exactly; the
+residual after the polarity flip is unattributable; 018 is untouched. V1 is not
+earned, on the no-consumer ground rather than on any mechanism. **D2 is undecided,
+not dead.** Nothing further needs to run. Programme placement
 split at the gate: the diagnostic ladder below is **Programme S2's epilogue**,
 because it re-attributes S2's own signed result; the corpus experiment, if it ever
 earns one, is **Programme S5 (cross-engine verification economics)**. S1 to S4 are
@@ -90,7 +93,16 @@ Three consequences draft 1 could not account for:
   review help". We have a measured failure mode, which is a far sharper thing to
   interrogate.
 
-## The arithmetic nobody had done (Fable r15)
+## The arithmetic nobody had done (Fable r15) — PARTLY REFUTED, see the DR control
+
+> **Read this section as history.** Its grounded limb was measured within-slice on
+> 2026-07-31 and does not replicate: the 39.6% figure below is rejected at
+> p = 1.7e-4. Its ungrounded limb replicates almost exactly (27.6% derived against
+> 27.3% measured). "Anti-discriminating" therefore fails on the limb that carried
+> it. The section is kept intact rather than edited, because it drove three
+> experiments and the record should show what was believed and what corrected it.
+> Details below under "DR result".
+
 
 016 reports a base ungrounded rate of 0.145. 018 reports an ungrounded density of
 0.228 per item on the `single_pass` arm. Together they give the field composition the
@@ -448,6 +460,85 @@ plus the real cost, which is qualifying a second local family after
 knowledge that scopes the whole verification roadmap including the peer rung. V1 is
 already dead either way on the no-consumer ground.
 
+## DR result: the within-slice remove control (2026-07-31, NOT SIGNABLE)
+
+The **frozen** verify prompt, verbatim, over the same 35 calibration items D0 and D1
+used, with the same within-item pairing. This is the denominator every earlier
+comparison lacked. Gated at Fable r17, which ruled the first reading of it
+**CLAIM OVERREACHES**; what follows is the corrected version, with every figure
+recomputed from the retained records against a checker replica validated at 0
+mismatches over 54 tallies.
+
+**The pairing objection is dead, permanently, and it was free.** The draft pass is
+byte-identical across D0, D1 and DR on **34 of 35 items**. So own-draft versus
+independent-draft pairing cannot explain anything, for any rung, and 018's use of
+the `single_pass` draft as comparator is equivalent to DR's use of its own.
+
+### What holds, with power
+
+**r15's grounded rate does not replicate.** It derived that the remove-framing
+deletes 39.6% of grounded fields. Within-slice, on the repaired instrument, the same
+prompt deletes **6 of 44, or 13.6%**. Under r15's own rate that is
+`P(<= 6 of 44) = 1.7e-4`. This is evidence of absence, not absence of evidence.
+
+**r15's ungrounded rate replicates almost exactly.** It derived 27.6%. Salvage-
+corrected measurement gives **3 of 11, or 27.3%**, within half a point.
+
+So "the audit is anti-discriminating" fails on the limb that carried it. The claim
+rested on grounded deletion running *above* prevalence, and grounded deletion is
+roughly a third of what was derived.
+
+### What does NOT hold, and I claimed it before the gate stopped me
+
+**Pro-discrimination is not established.** On the 27 scored items the ratio is 3.67x
+at Fisher p = 0.035. But r16 established first-balanced-object salvage as the honest
+parser treatment and this note's own Next block endorses it, and **all 8 failed items
+salvage cleanly**. Salvage-corrected over all 35: grounded 8/56 = 14.3%, ungrounded
+3/11 = 27.3%, ratio **1.91x at p = 0.37**, indistinguishable from blind.
+
+Quoting the unsalvaged 3.67x while the preferred treatment gives a non-significant
+1.91x is the same frame-selection r16 caught on D1. Both are reported; only the
+refutation is asserted.
+
+**And I had the salvage direction backwards, for the second round running.** I wrote
+that salvage lowers both drops. It does not. Salvage **raises** the grounded drop
+(0.222 to 0.229 per item) and **lowers** the ungrounded (0.148 to 0.086). So it
+*strengthens* 018's per-item direction and *destroys* the pro-discrimination reading.
+Both times the error came from asserting a direction instead of computing it, on data
+that was sitting retained precisely so it could be computed.
+
+### The attribution, stated as the unknown it is
+
+Not "a cross-slice artefact". Three things differ between 018's figure and DR besides
+the slice: the **instrument** (018's 79 scored are survivors of a truncation-blind
+parser, and 018's own physics argument says truncation culls keep-heavy items, which
+inflates the surviving magnitude), the pairing (now eliminated), and the fact that the
+r15 figure was *derived* from a composition that same section flagged as needing
+recomputation before use.
+
+Slice composition and parser survivorship are **not separable from retained data,
+ever**, because M1's confirmatory per-item raw was never persisted. The honest
+sentence is: *does not replicate within-slice on the repaired instrument; the
+confirmatory figure was derived rather than measured and cannot be re-derived.*
+
+### 018 is untouched, and that is checked rather than assumed
+
+018 signed a **per-item** direction on the confirmatory slice under a worst-case
+bound, explicitly disclaimed the 8.4:1 magnitude as subset-conditional, and never
+signed anti-discrimination, which lives only in this note's unsigned "prior-shifting
+observation, not a result" section. DR reproduces the per-item direction within
+calibration under **both** parser treatments, and salvage strengthens it (8 grounded
+against 3 ungrounded). Nothing here touches the bound. Correcting 019 does not
+undermine 018; leaving 019 uncorrected would.
+
+### The frame rule, written down once so it stops being shoppable
+
+**Per-field is the frame for discrimination questions**, because discrimination is a
+conditional deletion probability and the blind null is frame-invariant only there.
+**Per-item is the frame for harm questions**, because that is what the pipeline
+loses. Both are reported for every rung from here on, and the salvage treatment is
+applied symmetrically, including where it hurts.
+
 ## Five defects that a renumber does not fix
 
 In the design, not the premise. All five confirmed at the gate; defect 5 carries a
@@ -739,19 +830,16 @@ direction, which points at mechanism (c).
 
 The gate has run and the D1 reading is withdrawn. What is left, in order.
 
-1. **The missing within-slice control, and it is the cheapest thing here.** The
-   four-fifths figure compares a calibration drop against a confirmatory one, and
-   it cannot be repaired from retained data: M1's per-item raw was never persisted,
-   which is what fix 2 exists to prevent recurring. A remove-framing pass over the
-   same 35 calibration items through the existing `paired/4` harness costs about
-   17k tokens of free local CPU and supplies the denominator. It is also the only
-   observation that could put (c) back on the table: a within-slice remove drop near
-   0.5 **plus** a salvage-corrected D1 still showing per-field anti-discrimination.
-2. **Fix the keep prompt's parse gap if D1 is ever re-run**, with one clause
-   ("output exactly one JSON object, no commentary") and a salvage rule taking the
-   first *balanced* object rather than first-brace-to-last-brace, which would have
-   scored all 35 here. Note the direction: salvage moves the result toward (b), so a
-   clean re-run is likelier to weaken the withdrawn reading than to restore it.
+1. **DONE: the within-slice remove control.** It ran, and it refuted the grounded
+   limb of the arithmetic that launched the ladder. Fable r17: *nothing needs to
+   run.* The only unrecoverable quantity, the confirmatory composition, has no
+   decision hanging on it, since V1 is already dead on no-consumer grounds and 018
+   needs no rescue.
+2. **The parse gap is a property of verify-type prompts, not of the keep-framing.**
+   DR failed 8 of 35 against D1's 6 and D0's 0, same signature, often a mangled echo
+   of the instruction itself. Any future rung wants one clause ("output exactly one
+   JSON object, no commentary") plus first-*balanced*-object salvage, which scores
+   all 35 in both rungs. Applied symmetrically, per the frame rule above.
 3. **Instrument defect 3 needs a signed amendment** before any experiment that
    depends on a measured base rate. Two items in thirty-five in both rungs, unfixed
    only because 014 forbids a quiet retune, not because it is harmless.
