@@ -12,6 +12,13 @@
 %%%   - cerebras : fast, OpenAI-compatible, GLM model. CEREBRAS_API_KEYS.
 %%%   - groq     : fast, OpenAI-compatible, gpt-oss model. GROQ_API_KEYS.
 %%%   - gemini   : Google generateContent (different shape). GEMINI_API_KEYS.
+%%%   - nvidia   : free-tier NIM catalog, OpenAI-compatible, Llama-3.3 by
+%%%                default. NVIDIA_API_KEYS. Genuine cognitive diversity:
+%%%                the only Meta-lineage engine in the pool, and the only
+%%%                free one wide enough not to weigh down carousel budget.
+%%%   - deepseek : OpenAI-compatible. DEEPSEEK_API_KEYS. Paid, limited
+%%%                credit — deploy this to fewer minds than the free/wide
+%%%                providers, the same way melious/cerebras already are.
 %%%   - colibri  : sovereign LOCAL inference (colibrì serve, GLM-5.2),
 %%%                OpenAI-compatible. Endpoint per box: COLIBRI_URL +
 %%%                COLIBRI_MODEL. Keyless — the local serve ignores the bearer.
@@ -58,6 +65,16 @@
 -define(GEMINI_URL,
         "https://generativelanguage.googleapis.com/v1beta/models/"
         ?GEMINI_MODEL ":generateContent").
+-define(NVIDIA_URL, "https://integrate.api.nvidia.com/v1/chat/completions").
+%% Env-driven (NVIDIA_MODEL) — the NIM catalog is large and moves; a
+%% deployment can point at a different free model without a rebuild. The
+%% default is verified working (real tool_calls, real usage accounting)
+%% against this deployment's keys as of 2026-08-24. No GLM model exists in
+%% the catalog right now despite what a key's filename might suggest —
+%% checked via /v1/models, not assumed.
+-define(NVIDIA_MODEL_DEFAULT, <<"meta/llama-3.3-70b-instruct">>).
+-define(DEEPSEEK_URL, "https://api.deepseek.com/v1/chat/completions").
+-define(DEEPSEEK_MODEL_DEFAULT, <<"deepseek-chat">>).
 %% colibrì — sovereign LOCAL inference (colibri serve, OpenAI-compatible). The
 %% endpoint is a deployment fact (WHICH box hosts the engine, and its converted
 %% model), so URL + model come from the environment, not a baked-in constant. The
@@ -174,6 +191,10 @@ provider_config("cerebras") -> #{fmt => openai, url => ?CEREBRAS_URL, model => ?
                                  keyenv => "CEREBRAS_API_KEYS", label => "cerebras"};
 provider_config("mistral")  -> #{fmt => openai, url => ?MISTRAL_URL, model => ?MISTRAL_MODEL,
                                  keyenv => "MISTRAL_API_KEYS", label => "mistral"};
+provider_config("nvidia")   -> #{fmt => openai, url => ?NVIDIA_URL, model => nvidia_model(),
+                                 keyenv => "NVIDIA_API_KEYS", label => "nvidia"};
+provider_config("deepseek") -> #{fmt => openai, url => ?DEEPSEEK_URL, model => deepseek_model(),
+                                 keyenv => "DEEPSEEK_API_KEYS", label => "deepseek"};
 provider_config("melious")  -> #{fmt => openai, url => ?MELIOUS_URL, model => melious_model(),
                                  keyenv => "MELIOUS_API_KEY", label => "melious"};
 provider_config("colibri")  -> #{fmt => openai, url => colibri_url(), model => colibri_model(),
@@ -242,6 +263,18 @@ melious_model() ->
     case os:getenv("MELIOUS_MODEL") of
         M when is_list(M), M =/= "" -> unicode:characters_to_binary(M);
         _Unset                      -> ?MELIOUS_MODEL_DEFAULT
+    end.
+
+nvidia_model() ->
+    case os:getenv("NVIDIA_MODEL") of
+        M when is_list(M), M =/= "" -> unicode:characters_to_binary(M);
+        _Unset                      -> ?NVIDIA_MODEL_DEFAULT
+    end.
+
+deepseek_model() ->
+    case os:getenv("DEEPSEEK_MODEL") of
+        M when is_list(M), M =/= "" -> unicode:characters_to_binary(M);
+        _Unset                      -> ?DEEPSEEK_MODEL_DEFAULT
     end.
 
 %% ===================================================================

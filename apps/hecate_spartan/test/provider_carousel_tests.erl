@@ -67,6 +67,45 @@ melious_model_defaults_when_unset_test() ->
                      maps:get(model, spartan_mind_llm:provider_config("melious")))
     end).
 
+%% nvidia and deepseek follow the exact same shape as every other OpenAI-fmt
+%% provider (env-driven model, own keyenv) — covered together since neither
+%% needs anything special (no keyless flag, no per-provider timeout).
+
+nvidia_is_openai_and_env_driven_test() ->
+    Cfg = spartan_mind_llm:provider_config("nvidia"),
+    ?assertEqual(openai, maps:get(fmt, Cfg)),
+    ?assertEqual("NVIDIA_API_KEYS", maps:get(keyenv, Cfg)),
+    ?assertEqual("https://integrate.api.nvidia.com/v1/chat/completions", maps:get(url, Cfg)).
+
+nvidia_model_env_overrides_test() ->
+    with_env("NVIDIA_MODEL", "some/other-model", fun() ->
+        ?assertEqual(<<"some/other-model">>,
+                     maps:get(model, spartan_mind_llm:provider_config("nvidia")))
+    end).
+
+nvidia_model_defaults_when_unset_test() ->
+    with_unset("NVIDIA_MODEL", fun() ->
+        ?assertEqual(<<"meta/llama-3.3-70b-instruct">>,
+                     maps:get(model, spartan_mind_llm:provider_config("nvidia")))
+    end).
+
+deepseek_is_openai_and_env_driven_test() ->
+    Cfg = spartan_mind_llm:provider_config("deepseek"),
+    ?assertEqual(openai, maps:get(fmt, Cfg)),
+    ?assertEqual("DEEPSEEK_API_KEYS", maps:get(keyenv, Cfg)),
+    ?assertEqual("https://api.deepseek.com/v1/chat/completions", maps:get(url, Cfg)).
+
+deepseek_model_defaults_when_unset_test() ->
+    with_unset("DEEPSEEK_MODEL", fun() ->
+        ?assertEqual(<<"deepseek-chat">>,
+                     maps:get(model, spartan_mind_llm:provider_config("deepseek")))
+    end).
+
+nvidia_and_deepseek_ride_the_carousel_test() ->
+    with_env("HECATE_MIND_PROVIDERS", "nvidia,deepseek,melious", fun() ->
+        ?assertEqual(<<"nvidia,deepseek,melious">>, spartan_mind_llm:provider_labels())
+    end).
+
 %% --- env fixtures (restore whatever was there) ---
 
 with_env(Var, Value, Fun) ->
