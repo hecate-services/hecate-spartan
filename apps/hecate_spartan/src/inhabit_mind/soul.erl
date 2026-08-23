@@ -15,7 +15,7 @@
 -export([amend_charter/2, record_lesson/2, record_reflection/2,
          set_grand_strategy/2, set_working_memory/2]).
 -export([record_philosophy/2, record_idea/2, set_what_i_want/2,
-         set_tool_manifest/2, learn/3, consult/2, extend_genesis/2]).
+         set_tool_manifest/2, learn/3, consult/2, extend_genesis/2, set_tunables/2]).
 
 %% The areas of consciousness: {faculty, on-disk filename}. Gene's nine archives
 %% plus the two volatile faculties (grand strategy, working memory). Adding a
@@ -36,7 +36,12 @@ areas() ->
      %% The mind's own extension to the genesis core (L1): operating principles
      %% it has authored for itself. This is the BEAM-safe seat of self-
      %% modification — a mind rewrites how it operates, not the Erlang it runs on.
-     {genesis_addendum,  <<"GenesisAddendum.md">>}].
+     {genesis_addendum,  <<"GenesisAddendum.md">>},
+     %% L1's other half: the mind's own bounded, declared parameters (see
+     %% mind_tunables.erl). Where genesis_addendum holds open-ended principles,
+     %% this holds typed values inside a fixed range — one "id: value" line per
+     %% knob, always the WHOLE current set (set_act, not append_act).
+     {tunables,          <<"Tunables.md">>}].
 
 %% The registered name of one mind's one faculty. Stable per (DID, area), so a
 %% restarted area re-registers the same name. Bounded: minds-per-node x areas.
@@ -179,6 +184,12 @@ prior(Did, Area) ->
 extend_genesis(Did, Principle) ->
     append_act(Did, principle_adopted_v1, genesis_addendum,
                iolist_to_binary(["\n- ", Principle, "  ", stamp(), "\n"])).
+
+%% @doc Replace the mind's tunables document with the full rendered set
+%% (mind_tunables:retune/3's job; callers should not call this directly).
+-spec set_tunables(binary(), binary()) -> ok.
+set_tunables(Did, Text) ->
+    set_act(Did, tunables_revised_v1, tunables, Text).
 
 %% @doc The two-tier Knowledge Library: "you can't remember what you can't
 %% remember." A learned fact goes into the LIBRARY (the deep store, retrieved on

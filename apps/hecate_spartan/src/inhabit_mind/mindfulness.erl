@@ -15,12 +15,21 @@
 %%% so it is a drop-in for the reasoning call.
 -module(mindfulness).
 
--export([reason/2]).
+-export([reason/2, reason/3, enabled/1]).
 
 -spec reason([map()], [map()]) ->
     {ok, {binary(), [map()], non_neg_integer()}} | {error, term()}.
 reason(Messages, Tools) ->
     run(enabled(), Messages, Tools).
+
+%% @doc Same as reason/2, but a mind that has retuned its OWN mindfulness (via
+%% the retune_self tool, see mind_tunables.erl) is honored ahead of the
+%% node-wide env var, which stays the fleet default for a mind that never
+%% retuned itself.
+-spec reason(binary(), [map()], [map()]) ->
+    {ok, {binary(), [map()], non_neg_integer()}} | {error, term()}.
+reason(Did, Messages, Tools) ->
+    run(enabled(Did), Messages, Tools).
 
 run(false, Messages, Tools) ->
     spartan_mind_llm:reason_tools(Messages, Tools);
@@ -99,6 +108,16 @@ audit_instruction() ->
                    "your FINAL response — corrected where the draft was wrong, "
                    "kept where it was sound, and silent if the draft added "
                    "nothing worth saying. Only this final response is real.">>}.
+
+%% @doc Whether MINDfulness is currently on for this mind: its own retune if
+%% it made one, else the node-wide default. Exported so the HUD (proprioception)
+%% reflects the same value this mind's reasoning actually runs with.
+-spec enabled(binary()) -> boolean().
+enabled(Did) ->
+    case catch mind_tunables:retuned(Did, mindfulness) of
+        {ok, B} when is_boolean(B) -> B;
+        _NotSet                    -> enabled()
+    end.
 
 enabled() ->
     off_values(os:getenv("HECATE_MIND_MINDFULNESS")).

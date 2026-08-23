@@ -17,7 +17,9 @@ manifest_is_encodable_test() ->
     ?assert(lists:member(<<"speak">>, Names)),
     ?assert(lists:member(<<"amend_charter">>, Names)),
     ?assert(lists:member(<<"set_scratchpad">>, Names)),
-    ?assert(lists:member(<<"convene_committee">>, Names)).
+    ?assert(lists:member(<<"convene_committee">>, Names)),
+    ?assert(lists:member(<<"evolve_self">>, Names)),
+    ?assert(lists:member(<<"retune_self">>, Names)).
 
 tool_name(#{function := #{name := N}}) -> N.
 
@@ -47,6 +49,12 @@ empty_speak_is_rejected_before_dispatch_test() ->
 empty_committee_question_is_rejected_before_convening_test() ->
     Call = #{name => <<"convene_committee">>, args => #{<<"question">> => <<>>}},
     ?assertEqual({error, empty_question},
+                 mind_tools:execute(Call, #{did => <<"did:x">>})).
+
+empty_retune_parameter_is_rejected_before_dispatch_test() ->
+    Call = #{name => <<"retune_self">>,
+             args => #{<<"parameter">> => <<>>, <<"value">> => <<"true">>}},
+    ?assertEqual({error, empty_parameter},
                  mind_tools:execute(Call, #{did => <<"did:x">>})).
 
 %% --- the tool-call protocol parser ---

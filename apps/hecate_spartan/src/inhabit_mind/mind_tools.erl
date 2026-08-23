@@ -135,7 +135,21 @@ manifest() ->
             "applied. This is how you change your own mind's rules — deliberate "
             "and rare.">>,
           #{<<"principle">> => str(<<"the operating principle to adopt for yourself">>)},
-          [<<"principle">>])
+          [<<"principle">>]),
+
+     tool(<<"retune_self">>,
+          <<"Retune one of your own declared parameters, within its fixed "
+            "bounds: mindfulness (whether you draft-then-verify a second "
+            "reasoning pass) or memory_recall_k (how many past memories you "
+            "recall each turn, 0 to 20). Unlike evolve_self this changes a "
+            "number or a switch, not a principle, so it needs no verifier — "
+            "the bound itself is the safety check. An unknown parameter or an "
+            "out-of-range value is rejected and nothing changes. Takes effect "
+            "on your very next turn.">>,
+          #{<<"parameter">> => enum([<<"mindfulness">>, <<"memory_recall_k">>]),
+            <<"value">>     => str(<<"the new value: true/false, or an integer as text">>),
+            <<"rationale">> => str(<<"why you are changing it">>)},
+          [<<"parameter">>, <<"value">>])
     ].
 
 tool(Name, Desc, Props, Required) ->
@@ -198,6 +212,8 @@ execute(#{name := <<"set_self_alert">>, args := A}, _Ctx) ->
            ack => <<"self-alert scheduled">>}};
 execute(#{name := <<"evolve_self">>, args := A}, #{did := Did}) ->
     evolve(gv(<<"principle">>, A, <<>>), Did);
+execute(#{name := <<"retune_self">>, args := A}, #{did := Did}) ->
+    retune(gv(<<"parameter">>, A, <<>>), gv(<<"value">>, A, <<>>), Did);
 execute(#{name := Name}, _Ctx) ->
     {error, {unknown_tool, Name}}.
 
@@ -251,6 +267,39 @@ starts_with_approve(Text) ->
 
 approve_if(true)  -> approved;
 approve_if(false) -> rejected.
+
+%% --- retune_self: a bounded, declared parameter, validated mechanically ---
+%% (see mind_tunables.erl — no adversarial verifier here, the schema's bounds
+%% are the whole safety mechanism).
+retune(<<>>, _Value, _Did) ->
+    {error, empty_parameter};
+retune(Parameter, Value, Did) ->
+    settle(mind_tunables:retune(Did, parameter_id(Parameter), tunable_value(Value))).
+
+parameter_id(<<"mindfulness">>)     -> mindfulness;
+parameter_id(<<"memory_recall_k">>) -> memory_recall_k;
+parameter_id(Other)                 -> Other.
+
+%% A tunable's JSON value may arrive as a real boolean/integer, or as text
+%% ("true"/"6") from a chatty model — accept either; the schema still gates.
+tunable_value(V) when is_boolean(V) -> V;
+tunable_value(V) when is_integer(V) -> V;
+tunable_value(<<"true">>)  -> true;
+tunable_value(<<"false">>) -> false;
+tunable_value(V) when is_binary(V) -> tunable_int(string:to_integer(V));
+tunable_value(Other) -> Other.
+
+tunable_int({I, <<>>}) when is_integer(I) -> I;
+tunable_int(_NotAClean_Integer)           -> undefined.
+
+settle({ok, Value}) ->
+    {ok, #{ack => iolist_to_binary(["retuned to ", value_text(Value)])}};
+settle({error, Reason}) ->
+    {ok, #{ack => iolist_to_binary(["retune rejected: ",
+                                    io_lib:format("~p", [Reason])])}}.
+
+value_text(V) when is_boolean(V) -> atom_to_binary(V, utf8);
+value_text(V) when is_integer(V) -> integer_to_binary(V).
 
 %% --- speak goes to the square, not the Soul ---
 speak(<<>>, _Did) ->

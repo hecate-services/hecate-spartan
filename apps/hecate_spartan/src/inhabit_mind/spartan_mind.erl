@@ -55,10 +55,10 @@
 -define(SELF_ALERT_RETRY_MS, 3000).
 
 %% Long-term memory: at boot, seed the semantic index from up to this many of
-%% the mind's most recent past turns; on each turn, recall this many memories
-%% nearest in meaning to the stimulus into the mind's context.
+%% the mind's most recent past turns; on each turn, recall the mind's own
+%% memory_recall_k (mind_tunables.erl; defaults to 2, retunable per mind)
+%% nearest-in-meaning memories into its context.
 -define(MEMORY_SEED_CAP, 200).
--define(RECALL_K, 2).
 %% Re-link one memory via the LLM every this-many remembered turns (~one sleep
 %% consolidation window), so agentic linking costs one small call, not one/turn.
 -define(EVOLVE_EVERY, 8).
@@ -234,7 +234,7 @@ maybe_react(Payload, St) when is_map(Payload) ->
 maybe_react(_Payload, St) ->
     St.
 
-react({ok, Message}, Fact, St) ->
+react({ok, Message}, Fact, #st{did = Did} = St) ->
     Self = self(),
     %% Defuse the stimulus (poison-pill) before it enters context: peers and the
     %% world feed are untrusted. The raw Message is still carried to the reasoned
@@ -246,7 +246,7 @@ react({ok, Message}, Fact, St) ->
     %% spawn_MONITOR, not spawn: if the reasoning process dies abnormally without
     %% reporting (a crash the inner catches miss), the DOWN handler clears `busy',
     %% so the mind can never wedge deaf-and-busy-forever.
-    _ = spawn_monitor(fun() -> run_reasoning(Self, Message, Messages, Tools) end),
+    _ = spawn_monitor(fun() -> run_reasoning(Self, Did, Message, Messages, Tools) end),
     St#st{busy = true, last_reasoned = erlang:system_time(millisecond)};
 %% Its own post coming back round the agora. Nothing was missed — it already
 %% knows what it said — so note the decline but do not re-observe it.
@@ -304,10 +304,11 @@ clip_sig(Bin) -> clip_sig(Bin, string:length(Bin)).
 clip_sig(Bin, Len) when Len =< 200 -> Bin;
 clip_sig(Bin, _Len)                -> string:slice(Bin, 0, 200).
 
-run_reasoning(Self, Message, Messages, Tools) ->
+run_reasoning(Self, Did, Message, Messages, Tools) ->
     timer:sleep(rand:uniform(?STAGGER_MS)),
-    %% MINDfulness: draft then verify (a no-op passthrough when disabled).
-    case mindfulness:reason(Messages, Tools) of
+    %% MINDfulness: draft then verify (a no-op passthrough when disabled,
+    %% whether disabled by the node's env var or the mind's own retune).
+    case mindfulness:reason(Did, Messages, Tools) of
         {ok, {Text, ToolCalls, Tokens}} ->
             Self ! {reasoned, Message, Text, ToolCalls, Tokens};
         {error, Why} ->
@@ -366,15 +367,17 @@ build_context(Message, Signals, #st{did = Did, identity = Id, memory = Mem} = St
         chronicle  => Recent,
         scratchpad => St#st.scratchpad,
         consolidated => memory:consolidated(Did),
-        memories   => recall_memories(Mem, Message),
+        memories   => recall_memories(Mem, Message, Did),
         mission    => render_missions(St#st.missions),
         hud        => hud(Recent, St, mem_size(Mem))
     }).
 
-%% Recall the memories nearest in meaning to this stimulus. Best-effort: an
-%% unopened or unavailable memory recalls nothing.
-recall_memories(undefined, _Message) -> [];
-recall_memories(Mem, Message)        -> mind_memory:recall(Mem, Message, ?RECALL_K).
+%% Recall the memories nearest in meaning to this stimulus, as many as this
+%% mind's own memory_recall_k (mind_tunables.erl). Best-effort: an unopened or
+%% unavailable memory recalls nothing.
+recall_memories(undefined, _Message, _Did) -> [];
+recall_memories(Mem, Message, Did) ->
+    mind_memory:recall(Mem, Message, mind_tunables:current(Did, memory_recall_k)).
 
 %% --- the society's work: live, multi-domain, injected over the mesh ---
 
@@ -430,7 +433,7 @@ hud(Chron, #st{tokens_used = Tokens, last_tokens = Last, did = Did, alerts = Ale
                       " stm=", integer_to_binary(memory:stm_count(Did)),
                       " mem=", integer_to_binary(MemSize),
                       " alerts=", alerts_hud(Alerts, Tokens),
-                      " mindful=", mindful_hud(),
+                      " mindful=", mindful_hud(Did),
                       " drones=", integer_to_binary(drone_count())]).
 
 alerts_hud([], _Tokens) ->
@@ -440,10 +443,12 @@ alerts_hud(Alerts, Tokens) ->
     iolist_to_binary([integer_to_binary(length(Alerts)),
                       "(next in ", integer_to_binary(max(0, Next - Tokens)), " tok)"]).
 
-mindful_hud() ->
-    case os:getenv("HECATE_MIND_MINDFULNESS") of
-        V when V =:= "off"; V =:= "0"; V =:= "false" -> <<"off">>;
-        _On                                          -> <<"on">>
+%% Reads the SAME effective value reasoning actually runs with (mindfulness's
+%% own retune-then-env precedence), so a retune is visible on the very next HUD.
+mindful_hud(Did) ->
+    case mindfulness:enabled(Did) of
+        true  -> <<"on">>;
+        false -> <<"off">>
     end.
 
 drone_count() ->
