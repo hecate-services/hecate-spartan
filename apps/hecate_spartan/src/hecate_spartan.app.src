@@ -7,14 +7,20 @@
         kernel,
         stdlib,
         crypto,
-        %% inets + ssl: the native minds' one call off the BEAM, to Melious.
+        %% inets + ssl: the native minds' calls off the BEAM — every LLM
+        %% provider, and (once granted) a mind's own reach_web tool.
         inets,
         ssl,
         public_key,
         %% hecate_om is the mesh client. Store-free: the service exports
         %% data_dir/0 but NOT store_id/0, so hecate_om:boot/1 wires no
         %% reckon-db store — state is ETS registries + file Souls.
-        hecate_om
+        hecate_om,
+        %% The rag_search L2 capability's transport (see federation_rag.erl
+        %% and mind_capabilities.erl). This node only ever calls
+        %% macula_rag:query/2 — it registers no responder, having no corpus
+        %% of its own to answer queries against.
+        macula_rag
         %% Long-term memory is mind_memory: MESH-FIRST embeddings via
         %% `io.hecate.embed' (hecate-embedder serves 384-dim fastembed), with a
         %% local HTTP embedder as fallback and lexical matching below that. No
@@ -78,6 +84,6 @@
     {modules, []},
     {licenses, ["Apache-2.0"]},
     {links, [
-        {"Codeberg", "https://codeberg.org/hecate-services/hecate-spartan"}
+        {"GitHub", "https://github.com/hecate-services/hecate-spartan"}
     ]}
 ]}.

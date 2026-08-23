@@ -61,6 +61,11 @@ init([]) ->
         %% (UCAN minting), the registry, and the inbox, so it starts last.
         worker(hecate_spartan_ingress),
 
+        %% Configures macula_rag (the rag_search L2 capability's transport)
+        %% once hecate_om has a mesh client. Starts before the minds so the
+        %% capability is live by the time any mind is granted it.
+        worker(federation_rag),
+
         %% Committees a mind convenes: ephemeral, bounded deliberations among
         %% drone voices, each ending in a scribe's report to the agora. Its own
         %% dynamic supervisor, started before the minds so a mind can convene

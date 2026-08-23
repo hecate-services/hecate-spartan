@@ -15,7 +15,8 @@
 -export([amend_charter/2, record_lesson/2, record_reflection/2,
          set_grand_strategy/2, set_working_memory/2]).
 -export([record_philosophy/2, record_idea/2, set_what_i_want/2,
-         set_tool_manifest/2, learn/3, consult/2, extend_genesis/2, set_tunables/2]).
+         set_tool_manifest/2, learn/3, consult/2, extend_genesis/2, set_tunables/2,
+         set_capabilities/2]).
 
 %% The areas of consciousness: {faculty, on-disk filename}. Gene's nine archives
 %% plus the two volatile faculties (grand strategy, working memory). Adding a
@@ -41,7 +42,13 @@ areas() ->
      %% mind_tunables.erl). Where genesis_addendum holds open-ended principles,
      %% this holds typed values inside a fixed range — one "id: value" line per
      %% knob, always the WHOLE current set (set_act, not append_act).
-     {tunables,          <<"Tunables.md">>}].
+     {tunables,          <<"Tunables.md">>},
+     %% L2: the mind's own capability grants (see mind_capabilities.erl) —
+     %% tools it was NOT born with (rag_search, reach_web) but has been
+     %% granted, one adversarial verify at a time, gated like genesis_addendum
+     %% rather than bounded like tunables (no fixed range bounds a new tool's
+     %% risk). One id per line; presence = granted.
+     {capabilities,      <<"Capabilities.md">>}].
 
 %% The registered name of one mind's one faculty. Stable per (DID, area), so a
 %% restarted area re-registers the same name. Bounded: minds-per-node x areas.
@@ -190,6 +197,13 @@ extend_genesis(Did, Principle) ->
 -spec set_tunables(binary(), binary()) -> ok.
 set_tunables(Did, Text) ->
     set_act(Did, tunables_revised_v1, tunables, Text).
+
+%% @doc Replace the mind's capabilities document with the full rendered grant
+%% set (mind_capabilities:grant/2's job; callers should not call this
+%% directly).
+-spec set_capabilities(binary(), binary()) -> ok.
+set_capabilities(Did, Text) ->
+    set_act(Did, capabilities_revised_v1, capabilities, Text).
 
 %% @doc The two-tier Knowledge Library: "you can't remember what you can't
 %% remember." A learned fact goes into the LIBRARY (the deep store, retrieved on

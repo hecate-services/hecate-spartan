@@ -242,7 +242,7 @@ react({ok, Message}, Fact, #st{did = Did} = St) ->
     %% The signal line is the sensor's structured metadata (closed vocabulary),
     %% carried alongside so the mind reasons on WHAT/WHERE/WHO, not prose alone.
     Messages = build_context(defuse:defuse(Message), news_signals(Fact), St),
-    Tools = mind_tools:manifest(),
+    Tools = mind_tools:manifest(Did),
     %% spawn_MONITOR, not spawn: if the reasoning process dies abnormally without
     %% reporting (a crash the inner catches miss), the DOWN handler clears `busy',
     %% so the mind can never wedge deaf-and-busy-forever.

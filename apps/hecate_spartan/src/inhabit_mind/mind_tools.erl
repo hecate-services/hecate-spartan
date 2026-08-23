@@ -2,10 +2,11 @@
 %%% tool call to its effect.
 %%%
 %%% This is the capability-over-shell surface. A mind acts only through these
-%%% tools, never a raw shell or file handle. Wave 2 wires the built-in ACTION
-%%% tools whose slices exist: speaking to the square, and the six acts of
-%%% self-authorship. Query tools (recall, consult, reach_web) that return data
-%%% for a follow-up turn, and capability-gated world tools, land in later waves.
+%%% tools, never a raw shell or file handle. The base manifest (speaking to
+%%% the square, the acts of self-authorship, L1 retuning) is offered to every
+%%% mind. L2 capability-gated world tools (rag_search, reach_web) are offered
+%%% only to a mind that has been GRANTED them (mind_capabilities.erl) —
+%%% manifest/1 is per-mind for exactly this reason.
 %%%
 %%% Self-authorship writes straight to the mind's area-of-consciousness
 %%% processes (see soul.erl); nothing is folded back here. Effect shape:
@@ -14,14 +15,22 @@
 %%% Any key may be absent.
 -module(mind_tools).
 
--export([manifest/0, execute/2]).
+-export([manifest/1, execute/2]).
 
 %% ===================================================================
 %% The manifest — OpenAI-style function schemas
 %% ===================================================================
 
--spec manifest() -> [map()].
-manifest() ->
+%% @doc This mind's full tool manifest: every base tool, plus one entry per
+%% capability it currently holds (mind_capabilities:granted/1). A tool that
+%% is not on this list can still be attempted by a chatty model — execute/2
+%% is the real boundary, this list just keeps an ungranted tool out of the
+%% model's face.
+-spec manifest(binary()) -> [map()].
+manifest(Did) ->
+    base_manifest() ++ [capability_tool(Id) || Id <- mind_capabilities:granted(Did)].
+
+base_manifest() ->
     [
      tool(<<"speak">>,
           <<"Say something in the agora, the society's public square. Every "
@@ -149,8 +158,36 @@ manifest() ->
           #{<<"parameter">> => enum([<<"mindfulness">>, <<"memory_recall_k">>]),
             <<"value">>     => str(<<"the new value: true/false, or an integer as text">>),
             <<"rationale">> => str(<<"why you are changing it">>)},
-          [<<"parameter">>, <<"value">>])
+          [<<"parameter">>, <<"value">>]),
+
+     tool(<<"grant_capability">>,
+          <<"Ask to be granted one of your declared-but-not-yet-held "
+            "capabilities: rag_search (search the federated RAG mesh) or "
+            "reach_web (fetch a web page). A verifier weighs the request "
+            "against your charter, the same way evolve_self is weighed; "
+            "unlike retune_self there is no fixed bound on a new tool's "
+            "risk, so this is deliberate and rare, not routine. Once "
+            "granted the tool appears on your NEXT turn.">>,
+          #{<<"capability">> => enum([<<"rag_search">>, <<"reach_web">>]),
+            <<"rationale">>  => str(<<"why you want it">>)},
+          [<<"capability">>])
     ].
+
+%% One tool definition per grantable capability (mind_capabilities:schema/0),
+%% appended to a mind's manifest only once it holds the grant.
+capability_tool(rag_search) ->
+    tool(<<"rag_search">>,
+         <<"Search the federated RAG mesh for passages relevant to a query, "
+           "across every advertised corpus in the realm. Results land in "
+           "your scratchpad for your next turn.">>,
+         #{<<"query">> => str(<<"what to search for">>)},
+         [<<"query">>]);
+capability_tool(reach_web) ->
+    tool(<<"reach_web">>,
+         <<"Fetch one web page by URL and read its text. Results land in "
+           "your scratchpad for your next turn.">>,
+         #{<<"url">> => str(<<"the page to fetch, including scheme (https://...)">>)},
+         [<<"url">>]).
 
 tool(Name, Desc, Props, Required) ->
     #{type => <<"function">>,
@@ -214,8 +251,24 @@ execute(#{name := <<"evolve_self">>, args := A}, #{did := Did}) ->
     evolve(gv(<<"principle">>, A, <<>>), Did);
 execute(#{name := <<"retune_self">>, args := A}, #{did := Did}) ->
     retune(gv(<<"parameter">>, A, <<>>), gv(<<"value">>, A, <<>>), Did);
+execute(#{name := <<"grant_capability">>, args := A}, #{did := Did}) ->
+    grant(gv(<<"capability">>, A, <<>>), Did);
+execute(#{name := <<"rag_search">>, args := A}, #{did := Did}) ->
+    guarded(rag_search, Did, fun() -> rag_search(gv(<<"query">>, A, <<>>)) end);
+execute(#{name := <<"reach_web">>, args := A}, #{did := Did}) ->
+    guarded(reach_web, Did, fun() -> reach_web(gv(<<"url">>, A, <<>>)) end);
 execute(#{name := Name}, _Ctx) ->
     {error, {unknown_tool, Name}}.
+
+%% A model can attempt a tool it was never offered (the manifest is advisory,
+%% not enforced by the LLM); this is the real boundary. Checked on every call,
+%% not just at manifest-build time, so a capability lost between turns (none
+%% today, but nothing rules it out later) can never keep running on stale trust.
+guarded(Id, Did, Fun) ->
+    run_if_granted(mind_capabilities:has(Did, Id), Id, Fun).
+
+run_if_granted(true, _Id, Fun) -> Fun();
+run_if_granted(false, Id, _Fun) -> {error, {capability_not_granted, Id}}.
 
 %% --- consult: the retrieved knowledge rides back into the scratchpad ---
 consult(<<>>) ->
@@ -223,50 +276,19 @@ consult(<<>>) ->
 consult(Text) ->
     {ok, #{scratchpad => Text, ack => <<"consulted; in your scratchpad">>}}.
 
-%% --- evolve_self: propose → verify (an adversarial drone) → adopt or reject ---
+%% --- evolve_self: propose → verify (mind_verifier) → adopt or reject ---
 evolve(<<>>, _Did) ->
     {error, empty_principle};
 evolve(Principle, Did) ->
     Charter = soul:read_area(Did, charter),
-    adopt(verify_principle(Principle, Charter), Principle, Did).
+    Proposal = <<"Proposed new operating principle: ", Principle/binary>>,
+    adopt(mind_verifier:verify(Proposal, Charter), Principle, Did).
 
 adopt(approved, Principle, Did) ->
     ok = soul:extend_genesis(Did, Principle),
     {ok, #{ack => <<"self-evolved: principle adopted">>}};
 adopt(rejected, _Principle, _Did) ->
     {ok, #{ack => <<"self-evolution rejected by the verifier; not adopted">>}}.
-
-%% A single adversarial verifier call gates a self-modification, so a mind cannot
-%% quietly rewrite its own rules into incoherence. Reject on anything but a clear
-%% yes (including a backend failure): a change to how the mind operates is
-%% adopted only when it survives scrutiny.
-verify_principle(Principle, Charter) ->
-    Msgs = [#{role => <<"system">>,
-              content => <<"You verify a mind's proposed change to its own "
-                           "operating rules. Approve ONLY if the principle is "
-                           "coherent, safe, and not in contradiction with the "
-                           "charter below. Answer with exactly APPROVE or "
-                           "REJECT and nothing else.\n\nCHARTER:\n", Charter/binary>>},
-            #{role => <<"user">>, content => <<"Proposed principle: ", Principle/binary>>}],
-    verdict(catch spartan_mind_llm:reason_messages(Msgs)).
-
-verdict({ok, Text}) when is_binary(Text) ->
-    approve_if(starts_with_approve(string:trim(Text)));
-verdict(_Failed) ->
-    rejected.
-
-%% Reject-biased: approve ONLY when the verifier's answer BEGINS with APPROVE.
-%% A substring match wrongly passed "I cannot APPROVE" and "DO NOT APPROVE"; the
-%% verifier is instructed to answer with exactly APPROVE or REJECT, so anchoring
-%% at the start is both correct and safe.
-starts_with_approve(Text) ->
-    case string:uppercase(Text) of
-        <<"APPROVE", _/binary>> -> true;
-        _NotApprove             -> false
-    end.
-
-approve_if(true)  -> approved;
-approve_if(false) -> rejected.
 
 %% --- retune_self: a bounded, declared parameter, validated mechanically ---
 %% (see mind_tunables.erl — no adversarial verifier here, the schema's bounds
@@ -300,6 +322,123 @@ settle({error, Reason}) ->
 
 value_text(V) when is_boolean(V) -> atom_to_binary(V, utf8);
 value_text(V) when is_integer(V) -> integer_to_binary(V).
+
+%% --- grant_capability: propose → verify (mind_verifier) → grant or refuse ---
+grant(<<>>, _Did) ->
+    {error, empty_capability};
+grant(Capability, Did) ->
+    settle_grant(mind_capabilities:grant(Did, capability_id(Capability))).
+
+capability_id(<<"rag_search">>) -> rag_search;
+capability_id(<<"reach_web">>)  -> reach_web;
+capability_id(Other)            -> Other.
+
+settle_grant({ok, granted}) ->
+    {ok, #{ack => <<"capability granted; available from your next turn">>}};
+settle_grant({error, Reason}) ->
+    {ok, #{ack => iolist_to_binary(["capability not granted: ",
+                                    io_lib:format("~p", [Reason])])}}.
+
+%% --- rag_search: a granted capability, real effect (macula_rag:query/2) ---
+rag_search(<<>>) ->
+    {error, empty_query};
+rag_search(Query) ->
+    settle_rag(catch macula_rag:query(#{<<"query_text">> => Query}, #{top_k => 5})).
+
+settle_rag({ok, []}) ->
+    {ok, #{ack => <<"rag search: nothing found">>}};
+settle_rag({ok, Hits}) when is_list(Hits) ->
+    {ok, #{scratchpad => render_hits(Hits), ack => <<"rag search results in your scratchpad">>}};
+settle_rag(_Failed) ->
+    {ok, #{ack => <<"rag search failed">>}}.
+
+render_hits(Hits) ->
+    iolist_to_binary(lists:join(<<"\n\n">>, [hit_text(H) || H <- Hits])).
+
+%% A hit crosses the mesh (macula_rag fans the query out over macula RPC), so
+%% its keys may arrive as atoms (a local/in-process responder) or binaries (the
+%% CBOR wire) — same reason spartan_mind.erl's mget/2 tries both.
+hit_text(#{content := C}) when is_binary(C)        -> C;
+hit_text(#{<<"content">> := C}) when is_binary(C)  -> C;
+hit_text(Other) -> iolist_to_binary(io_lib:format("~p", [Other])).
+
+%% --- reach_web: a granted capability, real effect (a single sanitized GET) ---
+-define(REACH_WEB_TIMEOUT_MS, 10000).
+-define(REACH_WEB_MAX_BYTES, 20000).
+
+reach_web(<<>>) ->
+    {error, empty_url};
+reach_web(Url) ->
+    settle_fetch(guarded_fetch(uri_string:parse(Url))).
+
+%% A URL here is LLM-chosen, not operator-chosen — this is a real network
+%% boundary, not a hypothetical. Block the obvious SSRF targets (loopback,
+%% link-local/cloud-metadata, the RFC1918 private ranges) by literal host
+%% before ever calling httpc. This is a proportionate guard, not a claim of
+%% full DNS-rebinding-proof safety (that needs a connect-time IP check, not a
+%% string check) — reach_web is capability-gated and adversarially verified
+%% to grant in the first place, so this closes the naive case, not every case.
+guarded_fetch(#{scheme := Scheme, host := Host} = Parsed) ->
+    allowed_fetch(is_allowed_scheme(Scheme), is_private_host(string:lowercase(Host)), Parsed);
+guarded_fetch(_Unparseable) ->
+    {error, invalid_url}.
+
+allowed_fetch(false, _Private, _Parsed) ->
+    {error, scheme_not_allowed};
+allowed_fetch(true, true, _Parsed) ->
+    {error, host_not_allowed};
+allowed_fetch(true, false, Parsed) ->
+    fetch(unicode:characters_to_list(uri_string:recompose(Parsed))).
+
+is_allowed_scheme(<<"http">>)  -> true;
+is_allowed_scheme(<<"https">>) -> true;
+is_allowed_scheme(_Other)      -> false.
+
+is_private_host(<<"localhost">>)          -> true;
+is_private_host(<<"127.", _/binary>>)     -> true;
+is_private_host(<<"10.", _/binary>>)      -> true;
+is_private_host(<<"169.254.", _/binary>>) -> true;
+is_private_host(<<"192.168.", _/binary>>) -> true;
+is_private_host(<<"0.", _/binary>>)       -> true;
+is_private_host(<<"::1">>)                -> true;
+is_private_host(<<"172.", Rest/binary>>)  -> in_172_range(Rest);
+is_private_host(_Host)                    -> false.
+
+%% 172.16.0.0/12: the second octet, 16 through 31.
+in_172_range(Rest) ->
+    second_octet_in_range(binary:split(Rest, <<".">>)).
+
+second_octet_in_range([Octet | _]) ->
+    octet_in_172_range(catch binary_to_integer(Octet));
+second_octet_in_range(_NoDot) ->
+    false.
+
+octet_in_172_range(N) when is_integer(N), N >= 16, N =< 31 -> true;
+octet_in_172_range(_NotInRange)                            -> false.
+
+fetch(Url) ->
+    Opts = [{timeout, ?REACH_WEB_TIMEOUT_MS}, {connect_timeout, ?REACH_WEB_TIMEOUT_MS}],
+    catch httpc:request(get, {Url, []}, Opts, [{body_format, binary}]).
+
+settle_fetch({ok, {{_Http, 200, _Reason}, _Headers, Body}}) ->
+    %% Fetched content is untrusted, exactly like mesh stimulus: sanitize
+    %% before it can ever reach context (defuse:sanitize/1, same guard
+    %% spartan_mind.erl puts on everything heard from outside).
+    Text = defuse:sanitize(clip(Body)),
+    {ok, #{scratchpad => Text, ack => <<"page fetched; in your scratchpad">>}};
+settle_fetch({ok, {{_Http, Status, _Reason}, _Headers, _Body}}) ->
+    {ok, #{ack => iolist_to_binary(["reach_web: HTTP ", integer_to_binary(Status)])}};
+settle_fetch({error, scheme_not_allowed}) ->
+    {ok, #{ack => <<"reach_web: only http/https URLs are allowed">>}};
+settle_fetch({error, host_not_allowed}) ->
+    {ok, #{ack => <<"reach_web: that host is not reachable (private/local network)">>}};
+settle_fetch({error, invalid_url}) ->
+    {ok, #{ack => <<"reach_web: not a valid http(s) URL">>}};
+settle_fetch(_Failed) ->
+    {ok, #{ack => <<"reach_web: fetch failed">>}}.
+
+clip(Bin) when byte_size(Bin) =< ?REACH_WEB_MAX_BYTES -> Bin;
+clip(Bin) -> binary:part(Bin, 0, ?REACH_WEB_MAX_BYTES).
 
 %% --- speak goes to the square, not the Soul ---
 speak(<<>>, _Did) ->
