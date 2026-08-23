@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
-# Test every ~/.gemini-api-keys/.spartan-* key against the model the entities
-# actually run (models/gemini-2.5-flash), before a single mind is deployed on it.
+# Test every ~/.ai-api-keys/.gemini-api-keys/.spartan-* key against the model
+# the entities actually run (models/gemini-2.5-flash), before a single mind is
+# deployed on it.
 #
 # A key that 429s or 403s under load looks exactly like "the entity is broken",
 # so it gets checked here first, with a real generateContent call rather than a
@@ -12,7 +13,7 @@
 #   ./scripts/test-gemini-keys.sh
 set -uo pipefail
 
-KEYDIR="${GEMINI_KEY_DIR:-$HOME/.gemini-api-keys}"
+KEYDIR="${GEMINI_KEY_DIR:-$HOME/.ai-api-keys/.gemini-api-keys}"
 # NOT gemini-2.5-flash: Google has closed it to new projects ("no longer
 # available to new users"), so the fleet's original key can call it and a
 # freshly minted one cannot. ListModels still advertises it, which is how you

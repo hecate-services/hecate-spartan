@@ -22,7 +22,7 @@ set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 OUT_DIR="${REPO_ROOT}/dist/melious-probe"
-KEY_FILE="${HOME}/.melious-api-keys/.beamologist-2026-07-14"
+KEY_FILE="${HOME}/.ai-api-keys/.melious-api-keys/.beamologist-2026-07-14"
 BASE_URL="https://api.melious.ai/v1"
 MODEL="qwen3.5-9b"
 TOOL_ATTEMPTS="${1:-8}"
