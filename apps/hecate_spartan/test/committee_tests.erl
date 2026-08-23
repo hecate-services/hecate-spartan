@@ -1,7 +1,10 @@
-%%% @doc Tests for the committee's pure surface: drone selection from the lens
-%%% roster, transcript rendering, and the drone/scribe prompt shapes. The live
-%%% deliberation (LLM calls, mesh publish, supervision) is integration; here we
-%%% cover everything that can be reasoned about without a backend or a store.
+%%% @doc Tests for the committee COORDINATOR's pure surface: drone selection
+%%% from the lens roster, transcript rendering, and the scribe's prompt shape.
+%%% A drone's own prompt (committee_drone:messages/3) is tested in
+%%% committee_drone_tests.erl — it is the drone's responsibility now, not the
+%%% coordinator's. The live deliberation (LLM calls, mesh publish, floor
+%%% hand-off, supervision) is integration; here we cover everything that can
+%%% be reasoned about without a backend or a store.
 -module(committee_tests).
 
 -include_lib("eunit/include/eunit.hrl").
@@ -36,25 +39,6 @@ render_transcript_joins_named_lines_test() ->
 
 render_empty_transcript_is_empty_test() ->
     ?assertEqual(<<>>, committee:render_transcript([])).
-
-%% --- drone prompts ---
-
-first_drone_is_invited_to_open_test() ->
-    Drone = hd(committee:pick_drones(1)),
-    [Sys, Usr] = committee:drone_messages(Drone, <<"What now?">>, []),
-    ?assertEqual(<<"system">>, maps:get(<<"role">>, Sys)),
-    ?assertEqual(<<"user">>, maps:get(<<"role">>, Usr)),
-    ?assertNotEqual(nomatch, binary:match(maps:get(<<"content">>, Sys), <<"What now?">>)),
-    ?assertNotEqual(nomatch,
-        binary:match(maps:get(<<"content">>, Usr), <<"speak first">>)).
-
-later_drone_sees_the_transcript_test() ->
-    Drone = hd(committee:pick_drones(1)),
-    T = [#{drone => <<"the operator">>, text => <<"Rotate the key.">>}],
-    [_Sys, Usr] = committee:drone_messages(Drone, <<"Q">>, T),
-    Content = maps:get(<<"content">>, Usr),
-    ?assertNotEqual(nomatch, binary:match(Content, <<"Rotate the key.">>)),
-    ?assertNotEqual(nomatch, binary:match(Content, <<"Add your view">>)).
 
 %% --- scribe prompt ---
 
