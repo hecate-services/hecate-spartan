@@ -52,7 +52,8 @@ handle_info({macula_event, _Ref, _Topic, Payload, _Meta}, St) ->
 handle_info({macula_event_gone, _Ref, _Reason}, St) ->
     self() ! subscribe,
     {noreply, St#ds{subref = undefined}};
-handle_info({spoke, Text}, St) ->
+handle_info({spoke, Text}, #ds{name = Name} = St) ->
+    logger:info("[committee_drone] ~ts: ~ts", [Name, snippet(Text)]),
     _ = publish_line(St, Text),
     {noreply, St};
 handle_info({speak_failed, Why}, #ds{name = Name} = St) ->
@@ -76,8 +77,10 @@ subscribe_with({ok, Pool}, {ok, Realm}, #ds{topic = Topic} = St) ->
 subscribe_with(_Client, _Realm, St) ->
     retry_subscribe(St).
 
-on_sub({ok, Ref}, St) -> St#ds{subref = Ref};
-on_sub(_Other, St)    -> retry_subscribe(St).
+on_sub({ok, Ref}, #ds{name = Name, topic = Topic} = St) ->
+    logger:info("[committee_drone] ~ts on the room (~ts)", [Name, Topic]),
+    St#ds{subref = Ref};
+on_sub(_Other, St) -> retry_subscribe(St).
 
 retry_subscribe(St) ->
     erlang:send_after(?RESUB_MS, self(), subscribe),
@@ -109,6 +112,7 @@ remember(Fact, #ds{transcript = T} = St) ->
 take_floor(false, St) ->
     St;
 take_floor(true, #ds{name = Name, lens = Lens, question = Q, transcript = T} = St) ->
+    logger:info("[committee_drone] ~ts takes the floor", [Name]),
     Self = self(),
     Msgs = messages(#{name => Name, lens => Lens}, Q, T),
     _ = spawn(fun() -> speak(Self, Msgs) end),
@@ -178,3 +182,6 @@ publish(Topic, Fact) ->
 %% dispatch/3's guards try both, this just reads the key generically.
 mget(AtomKey, Map) ->
     maps:get(AtomKey, Map, maps:get(atom_to_binary(AtomKey, utf8), Map, undefined)).
+
+snippet(Bin) when byte_size(Bin) =< 80 -> Bin;
+snippet(Bin) -> <<(binary:part(Bin, 0, 80))/binary, "\xe2\x80\xa6">>.

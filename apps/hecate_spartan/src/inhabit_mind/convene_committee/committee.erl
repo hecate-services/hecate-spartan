@@ -137,8 +137,9 @@ from_current_drone(false, _FactOrSilence, St) ->
     St;
 from_current_drone(true, silence, St) ->
     absorb_silence(declined, cancel_floor_timer(St));
-from_current_drone(true, Fact, St) ->
+from_current_drone(true, Fact, #cs{id = Id} = St) ->
     Line = #{drone => mget(drone, Fact), text => mget(body, Fact)},
+    logger:info("[committee] ~ts absorbed ~ts's turn", [Id, maps:get(drone, Line)]),
     advance(cancel_floor_timer(St#cs{transcript = St#cs.transcript ++ [Line]})).
 
 current_drone(#cs{drones = Drones, cursor = Cursor}) ->
