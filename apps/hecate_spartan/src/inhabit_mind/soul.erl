@@ -44,7 +44,7 @@ areas() ->
      %% knob, always the WHOLE current set (set_act, not append_act).
      {tunables,          <<"Tunables.md">>},
      %% L2: the mind's own capability grants (see mind_capabilities.erl) —
-     %% tools it was NOT born with (rag_search, reach_web) but has been
+     %% tools it was NOT born with (rag_search, rag_contribute, reach_web) but has been
      %% granted, one adversarial verify at a time, gated like genesis_addendum
      %% rather than bounded like tunables (no fixed range bounds a new tool's
      %% risk). One id per line; presence = granted.

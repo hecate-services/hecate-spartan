@@ -72,6 +72,7 @@ ungranted_capability_tools_are_absent(Dir) ->
         Did = open_fresh(Dir),
         Names = [tool_name(T) || T <- mind_tools:manifest(Did)],
         ?assertNot(lists:member(<<"rag_search">>, Names)),
+        ?assertNot(lists:member(<<"rag_contribute">>, Names)),
         ?assertNot(lists:member(<<"reach_web">>, Names))
     end.
 

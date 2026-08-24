@@ -15,7 +15,7 @@
 
 -export([schema/0, granted/1, has/2, grant/2]).
 
--type id() :: rag_search | reach_web.
+-type id() :: rag_search | rag_contribute | reach_web.
 -export_type([id/0]).
 
 %% @doc The declared, grantable capabilities a mind may ask for. Adding one
@@ -28,6 +28,14 @@ schema() ->
                         "passages relevant to a query, across every "
                         "advertised corpus in the realm, not only "
                         "hecate-rag's.">>},
+     %% Granted separately from rag_search: reading the shared corpus and
+     %% writing into it (visible to every other mind that searches it after)
+     %% are different risk profiles — a mind can hold one without the other.
+     #{id => rag_contribute, tool => <<"rag_contribute">>,
+       description => <<"Write a finding into the shared RAG corpus so other "
+                        "minds can discover it later via rag_search — the "
+                        "society's compounding, shared memory, distinct from "
+                        "a mind's own private Knowledge Library (learn).">>},
      #{id => reach_web, tool => <<"reach_web">>,
        description => <<"Fetch a single web page by URL and read its text.">>}].
 

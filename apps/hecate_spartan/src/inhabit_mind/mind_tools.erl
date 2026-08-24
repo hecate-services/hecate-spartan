@@ -4,7 +4,8 @@
 %%% This is the capability-over-shell surface. A mind acts only through these
 %%% tools, never a raw shell or file handle. The base manifest (speaking to
 %%% the square, the acts of self-authorship, L1 retuning) is offered to every
-%%% mind. L2 capability-gated world tools (rag_search, reach_web) are offered
+%%% mind. L2 capability-gated world tools (rag_search, rag_contribute,
+%%% reach_web) are offered
 %%% only to a mind that has been GRANTED them (mind_capabilities.erl) —
 %%% manifest/1 is per-mind for exactly this reason.
 %%%
@@ -162,13 +163,14 @@ base_manifest() ->
 
      tool(<<"grant_capability">>,
           <<"Ask to be granted one of your declared-but-not-yet-held "
-            "capabilities: rag_search (search the federated RAG mesh) or "
+            "capabilities: rag_search (search the federated RAG mesh), "
+            "rag_contribute (write a finding into it for others to find), or "
             "reach_web (fetch a web page). A verifier weighs the request "
             "against your charter, the same way evolve_self is weighed; "
             "unlike retune_self there is no fixed bound on a new tool's "
             "risk, so this is deliberate and rare, not routine. Once "
             "granted the tool appears on your NEXT turn.">>,
-          #{<<"capability">> => enum([<<"rag_search">>, <<"reach_web">>]),
+          #{<<"capability">> => enum([<<"rag_search">>, <<"rag_contribute">>, <<"reach_web">>]),
             <<"rationale">>  => str(<<"why you want it">>)},
           [<<"capability">>])
     ].
@@ -182,6 +184,16 @@ capability_tool(rag_search) ->
            "your scratchpad for your next turn.">>,
          #{<<"query">> => str(<<"what to search for">>)},
          [<<"query">>]);
+capability_tool(rag_contribute) ->
+    tool(<<"rag_contribute">>,
+         <<"Write a finding into the shared RAG corpus, under a short title, "
+           "so any mind's rag_search can discover it later. This is the "
+           "society's shared, compounding memory — distinct from learn, "
+           "which stays private to you. Use it for something worth other "
+           "minds finding, not a passing thought.">>,
+         #{<<"title">>   => str(<<"a short title for the finding">>),
+           <<"content">> => str(<<"the finding, in your own words">>)},
+         [<<"title">>, <<"content">>]);
 capability_tool(reach_web) ->
     tool(<<"reach_web">>,
          <<"Fetch one web page by URL and read its text. Results land in "
@@ -255,6 +267,10 @@ execute(#{name := <<"grant_capability">>, args := A}, #{did := Did}) ->
     grant(gv(<<"capability">>, A, <<>>), Did);
 execute(#{name := <<"rag_search">>, args := A}, #{did := Did}) ->
     guarded(rag_search, Did, fun() -> rag_search(gv(<<"query">>, A, <<>>)) end);
+execute(#{name := <<"rag_contribute">>, args := A}, #{did := Did}) ->
+    guarded(rag_contribute, Did, fun() ->
+        rag_contribute(gv(<<"title">>, A, <<>>), gv(<<"content">>, A, <<>>), Did)
+    end);
 execute(#{name := <<"reach_web">>, args := A}, #{did := Did}) ->
     guarded(reach_web, Did, fun() -> reach_web(gv(<<"url">>, A, <<>>)) end);
 execute(#{name := Name}, _Ctx) ->
@@ -329,9 +345,10 @@ grant(<<>>, _Did) ->
 grant(Capability, Did) ->
     settle_grant(mind_capabilities:grant(Did, capability_id(Capability))).
 
-capability_id(<<"rag_search">>) -> rag_search;
-capability_id(<<"reach_web">>)  -> reach_web;
-capability_id(Other)            -> Other.
+capability_id(<<"rag_search">>)     -> rag_search;
+capability_id(<<"rag_contribute">>) -> rag_contribute;
+capability_id(<<"reach_web">>)      -> reach_web;
+capability_id(Other)                -> Other.
 
 settle_grant({ok, granted}) ->
     {ok, #{ack => <<"capability granted; available from your next turn">>}};
@@ -351,6 +368,53 @@ settle_rag({ok, Hits}) when is_list(Hits) ->
     {ok, #{scratchpad => render_hits(Hits), ack => <<"rag search results in your scratchpad">>}};
 settle_rag(_Failed) ->
     {ok, #{ack => <<"rag search failed">>}}.
+
+%% --- rag_contribute: a granted capability, real effect (hecate-rag ingest +
+%% embed over macula:call/5). This is the society's ACCUMULATION: unlike
+%% rag_search (macula_rag's federated query, any advertised corpus) a
+%% contribution is written straight to hecate-rag specifically — the one
+%% corpus this deployment actually owns and can write to. Other minds'
+%% rag_search then finds it, same as anyone else's.
+-define(RAG_CALL_TIMEOUT_MS, 15000).
+
+rag_contribute(<<>>, _Content, _Did) ->
+    {error, empty_title};
+rag_contribute(_Title, <<>>, _Did) ->
+    {error, empty_content};
+rag_contribute(Title, Content, Did) ->
+    settle_contribute(with_mesh(fun(Pool, Realm) -> ingest_and_embed(Pool, Realm, Title, Content, Did) end)).
+
+with_mesh(Fun) ->
+    on_mesh({hecate_om:macula_client(), hecate_om_identity:realm()}, Fun).
+
+on_mesh({{ok, Pool}, {ok, Realm}}, Fun) ->
+    catch Fun(Pool, Realm);
+on_mesh(_NotReady, _Fun) ->
+    {error, mesh_unavailable}.
+
+ingest_and_embed(Pool, Realm, Title, Content, Did) ->
+    DocId = binary:encode_hex(crypto:strong_rand_bytes(16), lowercase),
+    Body = <<"# ", Title/binary, "\n\n", Content/binary,
+             "\n\n_contributed by ", Did/binary, "_\n">>,
+    IngestParams = #{<<"document_id">> => DocId,
+                     <<"source_path">> => <<"spartan-contribution-", DocId/binary, ".md">>,
+                     <<"source_type">> => <<"text/markdown">>,
+                     <<"raw_bytes">>   => Body},
+    embedded(macula:call(Pool, Realm, <<"hecate-rag.ingest_document">>, IngestParams,
+                         ?RAG_CALL_TIMEOUT_MS),
+             Pool, Realm, DocId).
+
+embedded({ok, _}, Pool, Realm, DocId) ->
+    macula:call(Pool, Realm, <<"hecate-rag.embed_document">>,
+               #{<<"document_id">> => DocId}, ?RAG_CALL_TIMEOUT_MS);
+embedded({error, _} = E, _Pool, _Realm, _DocId) ->
+    E.
+
+settle_contribute({ok, _}) ->
+    {ok, #{ack => <<"contributed to the shared corpus">>}};
+settle_contribute({error, Reason}) ->
+    {ok, #{ack => iolist_to_binary(["contribution failed: ",
+                                    io_lib:format("~p", [Reason])])}}.
 
 render_hits(Hits) ->
     iolist_to_binary(lists:join(<<"\n\n">>, [hit_text(H) || H <- Hits])).
