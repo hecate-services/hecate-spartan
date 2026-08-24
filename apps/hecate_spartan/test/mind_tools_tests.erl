@@ -210,6 +210,26 @@ content_wins_over_reasoning_when_present_test() ->
     ?assertEqual({<<"final answer">>, []},
                  spartan_mind_llm:interpret_message(Msg)).
 
+%% groq's gpt-oss-20b uses a DIFFERENT field name for the same shape —
+%% content=null/empty, thought elsewhere — verified live 2026-08-24 (a
+%% 20-token-capped smoke test came back finish_reason=length with an empty
+%% content and the real answer sitting in "reasoning"). Silently dropped
+%% before this was added; the exact class of bug reasoning_content already
+%% got caught for once, just a different provider's field name.
+reasoning_field_without_the_content_suffix_is_also_captured_test() ->
+    Msg = #{<<"content">> => <<>>,
+            <<"reasoning">> => <<" thinking it through ">>,
+            <<"tool_calls">> => []},
+    ?assertEqual({<<"thinking it through">>, []},
+                 spartan_mind_llm:interpret_message(Msg)).
+
+%% reasoning_content is tried first when a response somehow carries both.
+reasoning_content_wins_over_plain_reasoning_test() ->
+    Msg = #{<<"content">> => null,
+            <<"reasoning_content">> => <<"qwen-style">>,
+            <<"reasoning">> => <<"groq-style">>},
+    ?assertEqual({<<"qwen-style">>, []}, spartan_mind_llm:interpret_message(Msg)).
+
 %% --- the Gemini parser (functionCall parts, args already an object) ---
 
 gemini_functioncall_is_a_tool_call_test() ->

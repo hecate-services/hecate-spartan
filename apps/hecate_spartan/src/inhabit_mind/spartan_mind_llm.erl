@@ -429,8 +429,14 @@ interpret_message(Msg) ->
                             maps:get(<<"tool_calls">>, Msg, [])),
     {thought_text(Msg), Calls}.
 
-%% A reasoning model (qwen) puts content at null on a tool turn and the thought
-%% in reasoning_content. Prefer content, else reasoning; never lose it.
+%% A reasoning model puts content at null on a tool turn and the thought in a
+%% sibling field instead — but WHICH field name is provider-specific, not one
+%% shared convention: qwen (via Melious) uses reasoning_content; groq's
+%% gpt-oss-20b uses reasoning (verified live 2026-08-24 — a 20-token cap on a
+%% smoke test came back finish_reason=length, content="", the actual answer
+%% sitting in "reasoning" — silently dropped before this fix, the exact bug
+%% already caught once for reasoning_content). Prefer content, else either
+%% reasoning field; never lose it.
 thought_text(Msg) ->
     case maps:get(<<"content">>, Msg, null) of
         C when is_binary(C), C =/= <<>> -> string:trim(C);
@@ -438,10 +444,17 @@ thought_text(Msg) ->
     end.
 
 reasoning_text(Msg) ->
-    case maps:get(<<"reasoning_content">>, Msg, null) of
-        R when is_binary(R) -> string:trim(R);
-        _NoReasoning        -> <<>>
-    end.
+    first_reasoning_field(Msg, [<<"reasoning_content">>, <<"reasoning">>]).
+
+first_reasoning_field(_Msg, []) ->
+    <<>>;
+first_reasoning_field(Msg, [Field | Rest]) ->
+    field_or_next(maps:get(Field, Msg, null), Msg, Rest).
+
+field_or_next(R, _Msg, _Rest) when is_binary(R), R =/= <<>> ->
+    string:trim(R);
+field_or_next(_NotUseful, Msg, Rest) ->
+    first_reasoning_field(Msg, Rest).
 
 interpret_call(#{<<"function">> := #{<<"name">> := Name, <<"arguments">> := Args}}) ->
     {true, #{name => Name, args => decode_args(Args)}};
