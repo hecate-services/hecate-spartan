@@ -27,6 +27,7 @@
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2, terminate/2]).
 -export([decide/5]).   %% the pre-LLM engagement gate, pure, exported for tests
 -export([news_signals/1]).   %% structured stimulus signal, pure, exported for tests
+-export([feed_topics/0]).   %% a mind's configured feed subscription, pure, exported for tests
 
 %% A mind hears two things over the mesh: the broadcast channel (society-wide
 %% stimulus, e.g. a sentinel digest) and the agora (every mind's public speech).
@@ -191,10 +192,59 @@ subscribe_all(_Client, _Realm, St) ->
 %% context). All derived from HECATE_SOCIETY, so a news mind and a cyber mind run
 %% the same code on different namespaces.
 topics() ->
-    [hecate_spartan_society:feed(),
-     hecate_spartan_society:topic(<<"broadcast">>),
+    feed_topics() ++
+    [hecate_spartan_society:topic(<<"broadcast">>),
      hecate_spartan_society:agora(),
      hecate_spartan_society:topic(<<"mission">>)].
+
+%% A mind's news-feed subscription: the firehose by default, or specific
+%% category sub-topics (HECATE_MIND_FEED_TOPICS) for real informational
+%% asymmetry between minds — not just different persona text reacting to
+%% identical input (see hecate-spartan/insights/001: "different adjectives
+%% is cosplay"). The sensor side publishes each item to <ns>/feed AND to
+%% <ns>/feed/<axis>/<value> per axis it carries a value for (hecate-news);
+%% this just picks which of those a mind subscribes to.
+%%
+%% "source_type:broadcaster,country:de,country:at" subscribes to THREE
+%% topics — one per clause — so a mind hears the UNION of matching items,
+%% not their intersection: combining axes widens the diet, it does not
+%% narrow it. A repeated axis (two country clauses, as above) is exactly
+%% that widening within one axis.
+feed_topics() ->
+    resolved_feed_topics(feed_axes()).
+
+resolved_feed_topics([]) ->
+    [hecate_spartan_society:feed()];
+resolved_feed_topics(Axes) ->
+    [hecate_spartan_society:topic(<<"feed/", Axis/binary, "/", Value/binary>>)
+     || {Axis, Value} <- Axes].
+
+feed_axes() ->
+    parse_feed_axes(os:getenv("HECATE_MIND_FEED_TOPICS")).
+
+parse_feed_axes(false) -> [];
+parse_feed_axes("")    -> [];
+parse_feed_axes(Env) ->
+    Bin = unicode:characters_to_binary(Env),
+    lists:filtermap(fun parse_axis/1, binary:split(Bin, <<",">>, [global])).
+
+parse_axis(Clause) ->
+    interpret_axis(binary:split(string:trim(Clause), <<":">>)).
+
+interpret_axis([Axis, Value]) when Axis =/= <<>>, Value =/= <<>> ->
+    known_axis(existing_axis(string:trim(Axis)), string:trim(Value));
+interpret_axis(_Malformed) ->
+    false.
+
+known_axis(undefined, _Value) -> false;
+known_axis(Axis, Value)       -> {true, {Axis, Value}}.
+
+%% Whitelist, matching hecate-news's own three published axes — an unknown
+%% axis name is a config typo, not a topic to subscribe to.
+existing_axis(<<"source_type">>) -> <<"source_type">>;
+existing_axis(<<"country">>)     -> <<"country">>;
+existing_axis(<<"topic_class">>) -> <<"topic_class">>;
+existing_axis(_Unknown)          -> undefined.
 
 %% A mission is standing context; everything else on the feed and the agora is
 %% stimulus to (maybe) react to. Route on a comparison because the topic is a
