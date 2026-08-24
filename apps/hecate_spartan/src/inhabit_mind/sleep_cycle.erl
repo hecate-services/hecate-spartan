@@ -7,10 +7,11 @@
 %%% short-term tier fills, reflects it into a CMO and trims it; and when CMOs
 %%% accumulate, condenses them into an MSO.
 %%%
-%%% Reflection uses the mind's own LLM (spartan_mind_llm) to write an abstractive
-%%% insight; if no backend is reachable it falls back to a deterministic
-%%% condensation, so consolidation still runs (less eloquently) when the
-%%% providers are down. Nudged after each turn; it decides when it is due.
+%%% Reflection uses the mind's own LLM (spartan_mind_llm) to write an
+%%% abstractive insight; there is deliberately NO deterministic fallback when
+%%% no backend is reachable (see reflect/2) — the tier is left untrimmed and
+%%% retried later rather than filing a truncated raw join as if it were a
+%%% real reflection. Nudged after each turn; it decides when it is due.
 %%%
 %%% See docs/DESIGN_MIND_FACULTIES.md for the theory (Generative Agents'
 %%% reflection, memory consolidation, the Common Model's declarative memory).
@@ -33,6 +34,22 @@
 %% accumulate forever.
 -define(REFLECT_MAX_CHARS, 800).
 -define(MSO_KEEP, 4).
+%% THE OUTPUT cap above was only half the fix. On a sustained provider outage,
+%% "no gist, no trim" (by design — see advance_stm/3) leaves the untrimmed tier
+%% growing by one entry per turn while it keeps missing ?STM_FULL/?CMO_FULL,
+%% and every retry re-joined the WHOLE tier as the reflection INPUT. That input
+%% was never capped, so the death spiral this comment already named once
+%% recurred and got worse: 2026-08-24, mercury's join reached 809,751 tokens,
+%% blowing through every configured provider's context window in turn (groq
+%% 131k, melious 80k) and burning a chunk of groq's TPD quota on requests that
+%% could only ever fail. Bounding the INPUT join to the same size that trips
+%% consolidation (?STM_FULL / ?CMO_FULL) makes every reflection attempt cost
+%% the same regardless of how large the untrimmed backlog has grown — the
+%% retry can still fail on a dead provider, but it can never fail BIGGER than
+%% the last attempt. Nothing is destroyed: the full record still lives in
+%% mind_journal (see memory.erl), only the LLM PROMPT is windowed.
+-define(REFLECT_STM_WINDOW, ?STM_FULL).
+-define(REFLECT_CMO_WINDOW, ?CMO_FULL).
 %% How long to leave a failed reflection alone before trying again.
 -define(RETRY_MS, 60000).
 
@@ -75,7 +92,7 @@ consolidate(Did) ->
 stm_step(false, _Did, _Stm) ->
     ok;
 stm_step(true, Did, Stm) ->
-    advance_stm(reflect(<<"experiences">>, texts(memory_store:all(Stm))), Did, Stm).
+    advance_stm(reflect(<<"experiences">>, texts(memory_store:recent(Stm, ?REFLECT_STM_WINDOW))), Did, Stm).
 
 %% NO GIST, NO TRIM. Consolidation that destroys raw experience because a provider
 %% was down is how a mind forgets a day it actually lived. Gene aborts and retries
@@ -95,7 +112,7 @@ advance_stm({ok, Cmo}, Did, Stm) ->
 cmo_step(false, _Did, _Cmos) ->
     ok;
 cmo_step(true, Did, Cmos) ->
-    advance_cmo(reflect(<<"condensed memories">>, texts(memory_store:all(Cmos))), Did, Cmos).
+    advance_cmo(reflect(<<"condensed memories">>, texts(memory_store:recent(Cmos, ?REFLECT_CMO_WINDOW))), Did, Cmos).
 
 advance_cmo(error, Did, _Cmos) ->
     logger:notice("[sleep_cycle] ~ts meta-reflection unavailable; CMOs kept intact", [Did]),

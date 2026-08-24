@@ -22,6 +22,7 @@ faculty_test_() ->
       fun a_gist_stays_bounded/1,
       fun no_backend_keeps_stm_intact/1,
       fun nothing_observed_is_ever_destroyed/1,
+      fun a_backlog_never_grows_the_reflection_input/1,
       fun store_self_heals_from_disk/1]}.
 
 %% A fresh on-disk root per test. `unique_integer' restarts each VM, so these
@@ -120,6 +121,39 @@ no_backend_keeps_stm_intact(Dir) ->
         ?assertEqual(8, count(Did, stm)),
         Texts = [maps:get(text, E) || E <- memory_store:all(memory:store_name(Did, stm))],
         [?assert(lists:member(n(<<"sentinel">>, I), Texts)) || I <- lists:seq(1, 8)]
+    end.
+
+%% THE DEATH SPIRAL. "No gist, no trim" (see no_backend_keeps_stm_intact) means a
+%% sustained outage leaves the tier growing past STM_FULL with every later
+%% observation, since only the reflection ATTEMPT is gated, not the add. Before
+%% this fix, the NEXT attempt joined the whole (now oversized) backlog as the
+%% reflection input, so every retry cost more than the last and got more certain
+%% to blow the provider's context window — which is exactly what happened live,
+%% 2026-08-24: a mind's join reached 809,751 tokens. The fix bounds the INPUT to
+%% the tier to the same size that trips consolidation, independent of how large
+%% the untrimmed backlog has grown. Pre-load a backlog well past STM_FULL
+%% directly (bypassing the trigger path, the way a stuck retry would arrive at
+%% one) and assert the reflector never sees more than STM_FULL of it.
+a_backlog_never_grows_the_reflection_input(Dir) ->
+    fun() ->
+        Self = self(),
+        application:set_env(hecate_spartan, mind_reflector,
+            fun(Msgs) -> Self ! {reflect_input, Msgs}, {ok, <<"gist">>} end),
+        Did = fresh(Dir),
+        Stm = memory:store_name(Did, stm),
+        %% 20 entries directly in the tier — well past STM_FULL (8) — before the
+        %% triggering observation, standing in for what a stuck retry backlog
+        %% looks like.
+        [ok = memory_store:add(Stm, e(n(<<"backlog">>, I))) || I <- lists:seq(1, 20)],
+        ok = memory:observe(Did, <<"the observation that trips consolidation">>),
+        receive
+            {reflect_input, Msgs} ->
+                [_System, #{content := Joined}] = Msgs,
+                Lines = binary:split(Joined, <<"\n">>, [global]),
+                ?assert(length(Lines) =< 8)
+        after 2000 ->
+            ?assert(false)
+        end
     end.
 
 %% The stronger claim: even when consolidation SUCCEEDS and the window is trimmed
