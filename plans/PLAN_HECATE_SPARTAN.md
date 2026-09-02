@@ -126,6 +126,25 @@ containment story, not polish.
   against the service's issuer key; registration requires a signature proof of
   DID possession. (Holder-of-key request signing is a later hardening.)
 
+- **2026-09-02 — A mind is also a citizen in the mesh-wide directory,
+  not only a spartan entity.** `hecate-citizens` is a separate,
+  cross-service directory (`hecate-mail` delegates work to a
+  `citizen_did` found there); spartan's own entity registry above is
+  local to spartan's own bounded society. A mind already holds a
+  stable, self-sovereign Ed25519 keypair (this decision's own
+  mechanism, one level up) — `citizen_registration` reuses it to call
+  `hecate_citizens.register_presence` directly, signing the same proof
+  shape that service's `citizen_ownership_proof` requires
+  (`citizen_kind => agent`, `citizen_did` = the raw pubkey, hex). A
+  passive listener on spartan's own `entity_announced` fact could not
+  do this instead: that fact carries no signature, and even a signed
+  one would be bound to `spartan.register_entity`, not
+  `hecate_citizens.register_presence` — proof of possession is
+  procedure-scoped by design, on both sides. Registration is deferred
+  off `spartan_mind`'s init path (a real mesh round-trip) and repeats
+  every `citizen_reregister_ms` so presence expires cleanly if a mind
+  stops calling.
+
 ## v1 architecture (given the mesh gaps)
 
 Single-instance **in-process broker** for a co-located / single-relay fleet:

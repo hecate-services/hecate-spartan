@@ -100,6 +100,10 @@ init(#{name := Name, character := Brief} = Spec) ->
     %% which in production loads an ONNX model, and must not block the mind's
     %% boot. Until it is ready the mind simply recalls nothing.
     self() ! setup_memory,
+    %% Same reasoning: citizen_register is a real mesh RPC round-trip
+    %% (citizen_registration:register/3), not the local, in-process
+    %% register_self/3 call above -- it must not block boot either.
+    self() ! citizen_register,
     Locale = maps:get(locale, Spec, hecate_spartan_service:locale()),
     Alerts = self_alerts:load(hecate_spartan_service:data_dir(), Did),
     logger:info("[spartan_mind] ~ts awake as ~ts (~b self-alert(s))",
@@ -115,6 +119,15 @@ handle_info(subscribe, St) ->
     {noreply, do_subscribe(St)};
 handle_info(setup_memory, St) ->
     {noreply, setup_memory(St)};
+%% Register (or refresh) this mind's presence in the shared citizens
+%% directory, then reschedule itself -- same self-rescheduling shape as
+%% the self-alert retry below. citizen_registration:register/3 never
+%% crashes (dark mesh / rejected proof both just log and return ok), so
+%% this never needs its own retry-sooner path the way self_alert does.
+handle_info(citizen_register, #st{name = Name, priv = Priv, pub = Pub} = St) ->
+    _ = citizen_registration:register(Name, Priv, Pub),
+    erlang:send_after(citizen_registration:reregister_ms(), self(), citizen_register),
+    {noreply, St};
 %% The off-process seeder finished embedding the mind's past; swap the seeded
 %% long-term memory in. Turns remembered during the brief seed window are in the
 %% now-replaced empty store; at boot that is at most a turn or two, acceptable.

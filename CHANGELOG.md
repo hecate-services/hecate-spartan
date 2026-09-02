@@ -32,6 +32,28 @@ All notable changes to hecate-spartan are documented here. Format follows
   fleet is rolled deliberately now. (dronex keeps its label and its auto-update.)
 
 ### Added
+- **A mind is now a first-class citizen, not just a spartan entity.**
+  `citizen_registration` announces a mind's presence to the shared,
+  mesh-wide `hecate-citizens` directory over `hecate_citizens.register_presence`
+  — a real mesh RPC, distinct from `maybe_register_entity`'s local, in-process
+  registration into spartan's own bounded society. `citizen_did` on the wire
+  is the mind's raw 32-byte Ed25519 pubkey (hex-encoded), matching
+  hecate-citizens' own read model; `citizen_kind => agent`. Proof of DID
+  possession is a signature over `{pubkey, timestamp, procedure}` — bound to
+  this specific procedure so it can't be replayed against another gated
+  capability hecate-citizens adds later, the exact scheme its own
+  `citizen_ownership_proof` expects. `spartan_mind` schedules registration
+  off the init path (a real mesh round-trip must not block a mind's boot,
+  same reasoning as its own long-term memory setup) and re-registers every
+  `citizen_reregister_ms` (app env, default 5 minutes — a ~4x margin under
+  hecate-citizens' own ~20-minute presence TTL, matching the republish ratio
+  its own docs call for); a mind that stops calling ages out of the
+  directory on its own. First-cut `offers => [<<"conversation">>]` — a
+  richer, per-mind list is a natural fit for L1/L2 self-modification later,
+  not invented here unbacked by any actual capability. 5 new tests,
+  including a cross-repo wire-contract regression: the signed byte layout
+  is independently reconstructed and verified against the raw Ed25519
+  primitive, not just checked against itself.
 - **Self-sovereign identity decided** (Ed25519 + UCAN) and implemented:
   `hecate_spartan_identity` owns the service issuer keypair (load-or-generate,
   raw keys, 0600), derives the service DID, mints per-entity UCANs scoped to
