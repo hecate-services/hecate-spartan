@@ -46,7 +46,24 @@
                       topics       := [binary()],
                       emoji        := binary(),
                       lang         := binary(),
-                      country      := binary(),
+                      %% TWO countries, because they are two different facts and
+                      %% the sensor knows them differently. `reporting_*' is who
+                      %% told you, taken EXACTLY from the source's own config.
+                      %% `subject_*' is what it is about, a gazetteer substring
+                      %% sweep that errs toward a best guess. An Irish
+                      %% broadcaster on Poland is the interesting case, and one
+                      %% field cannot say it.
+                      %%
+                      %% Both the ISO-2 code and the name travel. The code is
+                      %% what a flag and a filter need, and the NAME can be
+                      %% missing while the code is present -- observed live:
+                      %% al jazeera reports `reporting_country' `qa' with an
+                      %% empty name, because qa is not in the gazetteer. A
+                      %% name-only shape loses that item entirely.
+                      reporting_country      := binary(),
+                      reporting_country_name := binary(),
+                      subject_country        := binary(),
+                      subject_country_name   := binary(),
                       published_at := integer()}.
 -export_type([stimulus/0]).
 
@@ -87,18 +104,11 @@ of_news_item(ItemId, Fact) ->
       topics       => tags(get(topics, Fact)),
       emoji        => text(get(emoji, Fact)),
       lang         => text(get(lang, Fact)),
-      %% The reader wants what the story is ABOUT. Who reported it is already
-      %% told, and better, by `source'.
-      country      => text(country_of(Fact)),
+      reporting_country      => lower(text(get(reporting_country, Fact))),
+      reporting_country_name => text(get(reporting_country_name, Fact)),
+      subject_country        => lower(text(get(subject_country, Fact))),
+      subject_country_name   => text(get(subject_country_name, Fact)),
       published_at => whole(get(published_at, Fact))}.
-
-country_of(Fact) ->
-    %% A sensor fact names it `subject_country_name'; an inherited stimulus has
-    %% already been shaped and names it `country'.
-    either(get(country, Fact), get(subject_country_name, Fact)).
-
-either(undefined, Fallback) -> Fallback;
-either(Value, _Fallback)    -> Value.
 
 %% @doc The stimulus as it goes onto the wire, or nothing at all.
 %%
@@ -126,3 +136,7 @@ tags(_NotAList)               -> [].
 
 whole(N) when is_integer(N), N >= 0 -> N;
 whole(_NotAWholeNumber)             -> 0.
+
+%% ISO-3166-1 alpha-2, lowercased once here so every consumer can compare and
+%% index without each deciding a case convention of its own.
+lower(Bin) -> string:lowercase(Bin).

@@ -38,23 +38,49 @@ carries_every_field_a_reader_wants_test() ->
     ?assertEqual(<<"zeit">>, maps:get(source, S)),
     ?assertEqual(<<"private">>, maps:get(source_type, S)),
     ?assertEqual(<<"society">>, maps:get(topic_class, S)),
+    ?assertEqual(<<"de">>, maps:get(reporting_country, S)),
+    ?assertEqual(<<"Germany">>, maps:get(subject_country_name, S)),
     ?assertEqual([<<"sicherheit">>, <<"brandenburg">>], maps:get(topics, S)),
     ?assertEqual(<<"https://img.zeit.de/oranienburg/wide__1300x731">>,
                  maps:get(image_url, S)),
     ?assertEqual(1788344000000, maps:get(published_at, S)).
 
-%% The reader wants what the story is ABOUT. Who reported it is already told,
-%% and told better, by `source'.
-country_is_the_subject_not_the_reporter_test() ->
-    S = agora_stimulus:of_fact((news_fact())#{subject_country_name => <<"Ukraine">>,
-                                              reporting_country_name => <<"Italy">>}),
-    ?assertEqual(<<"Ukraine">>, maps:get(country, S)).
+%% Two countries, two different facts. An Irish broadcaster reporting on Poland
+%% is the interesting case and one field cannot say it.
+both_countries_travel_test() ->
+    S = agora_stimulus:of_fact((news_fact())#{reporting_country      => <<"ie">>,
+                                              reporting_country_name => <<"Ireland">>,
+                                              subject_country        => <<"pl">>,
+                                              subject_country_name   => <<"Poland">>}),
+    ?assertEqual(<<"ie">>, maps:get(reporting_country, S)),
+    ?assertEqual(<<"Ireland">>, maps:get(reporting_country_name, S)),
+    ?assertEqual(<<"pl">>, maps:get(subject_country, S)),
+    ?assertEqual(<<"Poland">>, maps:get(subject_country_name, S)).
+
+%% Observed live: al jazeera reports `qa' with an EMPTY name, because qa is not
+%% in the sensor's gazetteer. A name-only shape loses that item entirely, so
+%% the code travels whether or not a name does.
+code_survives_a_missing_name_test() ->
+    S = agora_stimulus:of_fact((news_fact())#{reporting_country      => <<"qa">>,
+                                              reporting_country_name => <<>>}),
+    ?assertEqual(<<"qa">>, maps:get(reporting_country, S)),
+    ?assertEqual(<<>>, maps:get(reporting_country_name, S)).
+
+%% Lowercased once here, so no consumer has to decide a case convention and
+%% none of them can disagree about it.
+codes_are_lowercased_once_test() ->
+    S = agora_stimulus:of_fact((news_fact())#{reporting_country => <<"DE">>,
+                                              subject_country   => <<"Ua">>}),
+    ?assertEqual(<<"de">>, maps:get(reporting_country, S)),
+    ?assertEqual(<<"ua">>, maps:get(subject_country, S)).
 
 %% The gazetteer places most stories and not all of them. An unplaced story is
-%% still a story.
-unplaced_story_has_no_country_test() ->
-    S = agora_stimulus:of_fact((news_fact())#{subject_country_name => <<>>}),
-    ?assertEqual(<<>>, maps:get(country, S)).
+%% still a story, and its REPORTING country is known regardless.
+unplaced_story_keeps_its_reporter_test() ->
+    S = agora_stimulus:of_fact((news_fact())#{subject_country      => <<>>,
+                                              subject_country_name => <<>>}),
+    ?assertEqual(<<>>, maps:get(subject_country, S)),
+    ?assertEqual(<<"de">>, maps:get(reporting_country, S)).
 
 %% 21 of 47 live sources publish no picture at all. That must be an absent
 %% field, never a broken one.
