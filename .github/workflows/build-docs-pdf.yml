@@ -1,7 +1,7 @@
 name: Build Documentation PDFs
 
 # Builds a PDF from docs/ and, on a tag push, attaches it to a GitHub Release.
-# Runs on the GitHub mirror (Codeberg is canonical). hecate-spartan is a public
+# hecate-spartan is a public
 # repo, so Actions minutes are free.
 
 on:

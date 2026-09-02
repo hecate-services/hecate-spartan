@@ -22,4 +22,4 @@ rebar3 ct
 
 ## Issues
 
-https://codeberg.org/hecate-services/hecate-spartan/issues
+https://github.com/hecate-services/hecate-spartan/issues

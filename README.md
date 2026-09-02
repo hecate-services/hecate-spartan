@@ -6,7 +6,7 @@ autonomous agents, and a BEAM port of the Spartan mind.**
 > **Spartan is Dr. Gene Sher's.** Its mind, its mechanisms, its philosophy are his.
 > This project stands entirely on that work; see [Credit](#credit-standing-on-gene-shers-work).
 
-A Layer-2 [`hecate-om`](https://codeberg.org/hecate-services/hecate-om)
+A Layer-2 [`hecate-om`](https://github.com/hecate-services/hecate-om)
 service that gives a fleet of persistent, headless Spartan entities what
 their file/`scp`-based `SpartanRadio` cannot: mesh-native discovery, NAT
 traversal, realm identity, multi-hop delivery, and message provenance — plus,
@@ -31,7 +31,7 @@ and UI session. A Spartan fleet is unattended and long-lived; it needs an
 **institution to bank with**, not a human's login. So the foundation is an
 always-on, containerised Layer-2 service with its own service-principal
 identity, running on realm infrastructure. The town/library identity metaphor
-is [`hecate-om`'s](https://codeberg.org/hecate-services/hecate-om/src/branch/main/guides/identity_model.md),
+is [`hecate-om`'s](https://github.com/hecate-services/hecate-om/blob/main/guides/identity_model.md),
 and this service inherits it.
 
 | | hecate-daemon (L3) | **hecate-spartan (L2)** |
@@ -152,19 +152,19 @@ The method itself keeps paying: a "green" experiment whose checker silently skip
 a frozen rule was caught only at the claim gate (016), and a fifteen-line
 worst-case bound replaced a three-hour re-run (018). Experiment *runners* live out
 of this repo, in
-[`hecate-spartan-programmes`](https://codeberg.org/hecate-services/hecate-spartan-programmes),
+[`hecate-spartan-programmes`](https://github.com/hecate-services/hecate-spartan-programmes),
 so a harness can never drift with the service it measures.
 
 ## The bigger picture
 
 Spartan's decoupled identity-kernel / swappable-backend design is the
-LLM-over-mesh thesis. [`hecate-llm`](https://codeberg.org/hecate-services/hecate-llm)
+LLM-over-mesh thesis. [`hecate-llm`](https://github.com/hecate-services/hecate-llm)
 already advertises `hecate-llm.chat` on the mesh, so a mind can reach inference by
 mesh RPC — no keys, no outbound HTTPS. Sovereign **local** inference is proven: a
 mind thinks against a pinned local model (the `local` provider clause, an
 OpenAI-compatible self-hosted serve) with no cloud provider in the path — the same
 pinned-endpoint discipline the research programme needs. And the neuroevolution
-lineage comes full circle: DXNN → [`faber-tweann`](https://codeberg.org/rgfaber/faber-tweann)
+lineage comes full circle: DXNN → [`faber-tweann`](https://github.com/rgfaber/faber-tweann)
 → evolvable models as mesh-hosted capabilities (the `neuroevolved` provider clause
 is the waiting seam).
 
@@ -271,7 +271,7 @@ for it.
 
 The lineage closes a circle: DXNN was neuroevolution on Erlang, and Gene's mind
 now thinks natively on the BEAM again. Our own neuroevolution work,
-[`faber-tweann`](https://codeberg.org/rgfaber/faber-tweann), descends directly
+[`faber-tweann`](https://github.com/rgfaber/faber-tweann), descends directly
 from DXNN.
 
 Gene has been generous in person too, with his time, his code, and his guidance,

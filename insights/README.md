@@ -15,7 +15,7 @@ legible to any curious human, not just the people building it. If a note cannot 
 explained plainly, we do not understand it well enough yet.
 
 **Runners live elsewhere.** The code that produces a result is in
-[`hecate-spartan-programmes`](https://codeberg.org/hecate-services/hecate-spartan-programmes),
+[`hecate-spartan-programmes`](https://github.com/hecate-services/hecate-spartan-programmes),
 never in the service it measures, together with the frozen corpus and the raw
 feed. The record for an experiment is four artefacts: the signed note here, and
 the corpus, runner and endpoint pin there. `hecate-arena` remains the harness for
