@@ -1,6 +1,6 @@
 {application, hecate_spartan, [
     {description, "Federated mesh commons for Spartan autonomous agents"},
-    {vsn, "0.1.0"},
+    {vsn, "0.2.0"},
     {registered, [hecate_spartan_sup]},
     {mod, {hecate_spartan_app, []}},
     {applications, [

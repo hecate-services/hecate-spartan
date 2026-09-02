@@ -5,6 +5,8 @@ All notable changes to hecate-spartan are documented here. Format follows
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-09-02
+
 ### Fixed
 - **The registry now survives a node restart.** The in-memory read models
   (`entities`, `mesh_entities`) rebuild themselves from the event log at boot
