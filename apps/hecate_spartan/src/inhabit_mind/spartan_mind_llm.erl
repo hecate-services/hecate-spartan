@@ -367,7 +367,15 @@ send(Messages, Tools, [{Config, Key} | Rest], N) ->
     case once(Config, body(Config, Messages, Tools), Key) of
         {ok, _} = Ok ->
             Ok;
+        %% The LAST slot. Its failure used to return in silence, which made the
+        %% end of the schedule the one outcome the log never showed: on
+        %% 2026-09-02 the fleet ran for hours with a dead primary and it was
+        %% impossible to tell from the log whether the fallback was even being
+        %% reached, let alone what it said. A turn dying is worth a line.
         {error, Why} when Rest =:= [] ->
+            logger:notice("[spartan_mind_llm] ~s failed on the last slot (~p); "
+                          "schedule exhausted, this turn is lost",
+                          [maps:get(label, Config, "?"), Why]),
             {error, Why};
         {error, Why} ->
             Delay = (?BASE_BACKOFF_MS bsl min(N - 1, 5)) + rand:uniform(?JITTER_MS),
