@@ -32,7 +32,8 @@
 %%% A mind's HECATE_MIND_PROVIDERS is an ordered CSV of provider names. Each
 %%% provider takes a POOL of keys (comma-separated; a lone key is a pool of one).
 %%% A call builds a PROVIDER-FIRST round-robin schedule across every configured
-%%% provider that has keys, one key per slot, capped at ?ATTEMPTS, with
+%%% provider that has keys, ONE SLOT PER (provider, key) and never the same
+%%% backend twice, with
 %%% exponential backoff + jitter between slots. Provider-first means a failure
 %%% falls straight to a DIFFERENT provider on the next try: when one broker has a
 %%% bad window, another answers, and per-key rate limits self-heal without the
@@ -139,7 +140,6 @@
 
 -define(TIMEOUT_MS, 120000).
 -define(MAX_TOKENS, 500).
--define(ATTEMPTS, 6).
 -define(BASE_BACKOFF_MS, 400).
 -define(JITTER_MS, 500).
 -define(DEFAULT_TEMP, 0.7).
@@ -307,9 +307,29 @@ deepseek_model() ->
 %% provider first: the carousel spreads load across every backend and milks each
 %% free tier, rather than pinning the primary and only failing over. Keys within
 %% a provider are shuffled too, so nothing is hit in lockstep.
+%%
+%% EVERY BACKEND ONCE, never the same one twice. The schedule used to be six
+%% slots drawn round-robin from the pools, which with a single configured
+%% provider meant six slots pointing at the SAME provider and the same key.
+%% On 2026-09-02 that cost the fleet ~26 seconds of exponential backoff per
+%% turn, hammering an endpoint that had already answered 429 six times, before
+%% reaching a fallback that answered 200 immediately. Retrying a rate-limited
+%% key milliseconds later is not a retry, it is the same request.
 attempts() ->
-    Primary = schedule(shuffle(lists:filtermap(fun pool/1, providers())), ?ATTEMPTS),
-    Primary ++ fallback_schedule().
+    Primary = shuffle(lists:filtermap(fun pool/1, providers())),
+    breaker:usable(every_backend_once(Primary) ++ fallback_schedule()).
+
+%% One slot per (provider, key), keys in their shuffled order, providers
+%% interleaved so a turn tries a different provider before a second key of the
+%% one that just failed.
+every_backend_once(Pools) ->
+    interleave([[{Config, Key} || Key <- Keys] || {Config, Keys} <- Pools]).
+
+interleave([])    -> [];
+interleave(Lists) ->
+    Heads = [H || [H | _] <- Lists],
+    Tails = [T || [_ | T] <- Lists, T =/= []],
+    Heads ++ interleave(Tails).
 
 %% Fallback providers (HECATE_MIND_FALLBACK_PROVIDERS, CSV) are tried ONLY after
 %% the whole primary schedule is exhausted, and are NEVER shuffled into the
@@ -347,16 +367,6 @@ provider_keys(Config) ->
 pool_keys(_Config, [])  -> false;
 pool_keys(Config, Keys) -> {true, {Config, shuffle(Keys)}}.
 
-schedule([], _N) ->
-    [];
-schedule(Pools, N) ->
-    NP = length(Pools),
-    [slot(I, Pools, NP) || I <- lists:seq(0, N - 1)].
-
-slot(I, Pools, NP) ->
-    {Config, Keys} = lists:nth((I rem NP) + 1, Pools),
-    {Config, lists:nth((I div NP rem length(Keys)) + 1, Keys)}.
-
 %% ===================================================================
 %% The shared send loop: walk the schedule, backoff+jitter on failure
 %% ===================================================================
@@ -366,6 +376,7 @@ send(_M, _T, [], _N) ->
 send(Messages, Tools, [{Config, Key} | Rest], N) ->
     case once(Config, body(Config, Messages, Tools), Key) of
         {ok, _} = Ok ->
+            _ = breaker:worked(Config),
             Ok;
         %% The LAST slot. Its failure used to return in silence, which made the
         %% end of the schedule the one outcome the log never showed: on
@@ -378,12 +389,30 @@ send(Messages, Tools, [{Config, Key} | Rest], N) ->
                           [maps:get(label, Config, "?"), Why]),
             {error, Why};
         {error, Why} ->
-            Delay = (?BASE_BACKOFF_MS bsl min(N - 1, 5)) + rand:uniform(?JITTER_MS),
-            logger:info("[spartan_mind_llm] ~s transient (~p); rotating in ~bms",
+            _ = breaker:failed(Config, Why),
+            %% Wait only before hitting the SAME provider again. Sleeping
+            %% thirteen seconds because nvidia is rate-limited, and then
+            %% asking deepseek, punishes a backend that was never the problem
+            %% -- and that sleep was most of a turn's latency.
+            Delay = pause_before(Rest, Config, N),
+            logger:info("[spartan_mind_llm] ~s failed (~p); next in ~bms",
                         [maps:get(label, Config, "?"), Why, Delay]),
-            timer:sleep(Delay),
+            sleep(Delay),
             send(Messages, Tools, Rest, N + 1)
     end.
+
+pause_before([{Next, _Key} | _], Config, N) ->
+    same_provider(label(Next) =:= label(Config), N);
+pause_before([], _Config, _N) ->
+    0.
+
+same_provider(true, N)   -> (?BASE_BACKOFF_MS bsl min(N - 1, 5)) + rand:uniform(?JITTER_MS);
+same_provider(false, _N) -> 0.
+
+sleep(0)     -> ok;
+sleep(Delay) -> timer:sleep(Delay).
+
+label(Config) -> maps:get(label, Config, "?").
 
 once(#{fmt := openai, url := Url} = Config, Body, Key) ->
     http_do({Url, [{"authorization", "Bearer " ++ Key}], "application/json", Body},
@@ -396,12 +425,27 @@ once(#{fmt := gemini, url := Url} = Config, Body, Key) ->
 %% long timeout; fast brokers keep the default.
 timeout_of(Config) -> maps:get(timeout, Config, ?TIMEOUT_MS).
 
+%% A rate limit usually says when to come back. The headers used to be
+%% discarded, so the one piece of information a 429 actually carries -- how
+%% long the quota is gone for -- was thrown away and guessed at instead.
 http_do(Request, Timeout, ParseFun) ->
     case httpc:request(post, Request, http_opts(Timeout), [{body_format, binary}]) of
         {ok, {{_, 200, _}, _RH, Resp}}  -> ParseFun(Resp);
+        {ok, {{_, 429, _}, RH, Resp}}   -> {error, {http, 429, snippet(Resp), retry_after(RH)}};
         {ok, {{_, Code, _}, _RH, Resp}} -> {error, {http, Code, snippet(Resp)}};
         {error, Reason}                 -> {error, Reason}
     end.
+
+%% Seconds, per RFC 9110. The HTTP-date form is legal and nobody sends it for
+%% a rate limit, so an unparseable value means "we were not told".
+retry_after(Headers) ->
+    seconds(lists:keyfind("retry-after", 1, [{string:lowercase(K), V} || {K, V} <- Headers])).
+
+seconds({_K, V}) -> whole(string:to_integer(string:trim(V)));
+seconds(false)   -> undefined.
+
+whole({N, _Rest}) when is_integer(N), N > 0 -> N;
+whole(_NotSeconds)                          -> undefined.
 
 keys(#{keyenv := Env}) ->
     case os:getenv(Env) of
