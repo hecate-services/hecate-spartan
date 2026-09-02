@@ -16,7 +16,13 @@ WORKDIR /build
 
 # Build toolchain. Rust via rustup (Alpine's rustc lags what macula's Rust deps
 # need); crt-static off so the NIF links as a cdylib.
-RUN apk add --no-cache git curl bash build-base cmake perl linux-headers
+# openssl-dev + the codec -dev packages: hecate_om pulls barrel_docdb, whose
+# rocksdb NIF builds from source with CMake and stopped configuring without
+# them ("Could NOT find OpenSSL") -- this image build was red from 2026-08-24
+# to 2026-09-02 for that reason, leaving the fleet on an August image. Same
+# list the sibling services' Containerfiles carry.
+RUN apk add --no-cache git curl bash build-base cmake perl linux-headers \
+        openssl-dev zstd-dev snappy-dev lz4-dev
 RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs \
         | sh -s -- -y --default-toolchain stable --profile minimal
 ENV PATH="/root/.cargo/bin:${PATH}"
@@ -48,7 +54,8 @@ RUN rebar3 as prod release
 # Stage 2 — runtime: slim Alpine + the assembled release
 #----------------------------------------------------------------------
 FROM docker.io/alpine:3.23
-RUN apk add --no-cache ncurses-libs libstdc++ libgcc openssl ca-certificates curl
+RUN apk add --no-cache ncurses-libs libstdc++ libgcc openssl ca-certificates curl \
+        zstd-libs snappy lz4-libs
 WORKDIR /app
 COPY --from=builder /build/_build/prod/rel/hecate_spartan ./
 RUN mkdir -p /data
