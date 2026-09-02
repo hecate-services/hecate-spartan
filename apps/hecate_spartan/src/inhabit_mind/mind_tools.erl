@@ -164,13 +164,17 @@ base_manifest() ->
      tool(<<"grant_capability">>,
           <<"Ask to be granted one of your declared-but-not-yet-held "
             "capabilities: rag_search (search the federated RAG mesh), "
-            "rag_contribute (write a finding into it for others to find), or "
-            "reach_web (fetch a web page). A verifier weighs the request "
+            "rag_contribute (write a finding into it for others to find), "
+            "reach_web (fetch a web page), graph_learn (teach the shared "
+            "knowledge graph a relationship), graph_ask_entity (ask it what "
+            "it knows about something), or graph_ask_links (ask it how "
+            "something relates to others). A verifier weighs the request "
             "against your charter, the same way evolve_self is weighed; "
             "unlike retune_self there is no fixed bound on a new tool's "
             "risk, so this is deliberate and rare, not routine. Once "
             "granted the tool appears on your NEXT turn.">>,
-          #{<<"capability">> => enum([<<"rag_search">>, <<"rag_contribute">>, <<"reach_web">>]),
+          #{<<"capability">> => enum([<<"rag_search">>, <<"rag_contribute">>, <<"reach_web">>,
+                                      <<"graph_learn">>, <<"graph_ask_entity">>, <<"graph_ask_links">>]),
             <<"rationale">>  => str(<<"why you want it">>)},
           [<<"capability">>])
     ].
@@ -199,7 +203,32 @@ capability_tool(reach_web) ->
          <<"Fetch one web page by URL and read its text. Results land in "
            "your scratchpad for your next turn.">>,
          #{<<"url">> => str(<<"the page to fetch, including scheme (https://...)">>)},
-         [<<"url">>]).
+         [<<"url">>]);
+capability_tool(graph_learn) ->
+    tool(<<"graph_learn">>,
+         <<"Teach the shared knowledge graph a relationship: subject, "
+           "predicate, object, each a short plain-text name (things and "
+           "relationships get created the first time they're mentioned — "
+           "no separate registration step).">>,
+         #{<<"subject">>   => str(<<"the thing the relationship starts from">>),
+           <<"predicate">> => str(<<"the relationship, stated as a short verb phrase">>),
+           <<"object">>    => str(<<"the thing the relationship points to">>)},
+         [<<"subject">>, <<"predicate">>, <<"object">>]);
+capability_tool(graph_ask_entity) ->
+    tool(<<"graph_ask_entity">>,
+         <<"Ask the shared knowledge graph what it knows about one thing, "
+           "in prose. Result lands in your scratchpad for your next turn.">>,
+         #{<<"entity">> => str(<<"the thing to ask about, the same name it was taught under">>)},
+         [<<"entity">>]);
+capability_tool(graph_ask_links) ->
+    tool(<<"graph_ask_links">>,
+         <<"Ask the shared knowledge graph how one thing relates to others, "
+           "in prose. Result lands in your scratchpad for your next turn.">>,
+         #{<<"subject">>   => str(<<"the thing to trace relationships from">>),
+           <<"predicate">> => str(<<"optional: only this specific relationship">>),
+           <<"direction">> => enum([<<"out">>, <<"in">>]),
+           <<"depth">>     => int(<<"how many hops to follow (default 1)">>)},
+         [<<"subject">>]).
 
 tool(Name, Desc, Props, Required) ->
     #{type => <<"function">>,
@@ -273,6 +302,17 @@ execute(#{name := <<"rag_contribute">>, args := A}, #{did := Did}) ->
     end);
 execute(#{name := <<"reach_web">>, args := A}, #{did := Did}) ->
     guarded(reach_web, Did, fun() -> reach_web(gv(<<"url">>, A, <<>>)) end);
+execute(#{name := <<"graph_learn">>, args := A}, #{did := Did}) ->
+    guarded(graph_learn, Did, fun() ->
+        graph_learn(gv(<<"subject">>, A, <<>>), gv(<<"predicate">>, A, <<>>), gv(<<"object">>, A, <<>>))
+    end);
+execute(#{name := <<"graph_ask_entity">>, args := A}, #{did := Did}) ->
+    guarded(graph_ask_entity, Did, fun() -> graph_ask_entity(gv(<<"entity">>, A, <<>>)) end);
+execute(#{name := <<"graph_ask_links">>, args := A}, #{did := Did}) ->
+    guarded(graph_ask_links, Did, fun() ->
+        graph_ask_links(gv(<<"subject">>, A, <<>>), gv(<<"predicate">>, A, undefined),
+                        gv(<<"direction">>, A, <<"out">>), gv(<<"depth">>, A, 1))
+    end);
 execute(#{name := Name}, _Ctx) ->
     {error, {unknown_tool, Name}}.
 
@@ -348,6 +388,9 @@ grant(Capability, Did) ->
 capability_id(<<"rag_search">>)     -> rag_search;
 capability_id(<<"rag_contribute">>) -> rag_contribute;
 capability_id(<<"reach_web">>)      -> reach_web;
+capability_id(<<"graph_learn">>)      -> graph_learn;
+capability_id(<<"graph_ask_entity">>) -> graph_ask_entity;
+capability_id(<<"graph_ask_links">>)  -> graph_ask_links;
 capability_id(Other)                -> Other.
 
 settle_grant({ok, granted}) ->
@@ -384,8 +427,18 @@ rag_contribute(_Title, <<>>, _Did) ->
 rag_contribute(Title, Content, Did) ->
     settle_contribute(with_mesh(fun(Pool, Realm) -> ingest_and_embed(Pool, Realm, Title, Content, Did) end)).
 
+%% Guarded: hecate_om:macula_client()/hecate_om_identity:realm() themselves
+%% exit with `noproc' when hecate_om isn't running (e.g. under eunit, or a
+%% mind's mesh connection genuinely down), which on_mesh/2's own dark-mesh
+%% clause below can't catch -- the crash happens one step earlier, before
+%% on_mesh/2 is ever entered. Same gotcha embedder.erl's mesh path and
+%% citizen_registration.erl are guarded against; this was the one caller
+%% here that wasn't, confirmed by a real crash before this try/catch was
+%% added (rag_contribute_never_crashes_on_a_dark_mesh, mind_tools_tests.erl).
 with_mesh(Fun) ->
-    on_mesh({hecate_om:macula_client(), hecate_om_identity:realm()}, Fun).
+    try on_mesh({hecate_om:macula_client(), hecate_om_identity:realm()}, Fun)
+    catch _:_ -> {error, mesh_unavailable}
+    end.
 
 on_mesh({{ok, Pool}, {ok, Realm}}, Fun) ->
     catch Fun(Pool, Realm);
@@ -503,6 +556,68 @@ settle_fetch(_Failed) ->
 
 clip(Bin) when byte_size(Bin) =< ?REACH_WEB_MAX_BYTES -> Bin;
 clip(Bin) -> binary:part(Bin, 0, ?REACH_WEB_MAX_BYTES).
+
+%% --- graph_learn: a granted capability, real effect
+%% (hecate_graph.learn_link over macula:call/5, same with_mesh/1 helper
+%% rag_contribute already uses). Attribution note: this call rides
+%% spartan's own mesh connection, not one of the mind's own, so
+%% hecate-graph's provenance (hecate_om_wire:caller/1, wire-
+%% authenticated) records this spartan instance, not the individual
+%% mind's own citizen_did — a known limit, not yet solved, see
+%% plans/PLAN_HECATE_SPARTAN.md. ---
+-define(GRAPH_CALL_TIMEOUT_MS, 10000).
+
+graph_learn(<<>>, _Predicate, _Object) ->
+    {error, empty_subject};
+graph_learn(_Subject, <<>>, _Object) ->
+    {error, empty_predicate};
+graph_learn(_Subject, _Predicate, <<>>) ->
+    {error, empty_object};
+graph_learn(Subject, Predicate, Object) ->
+    settle_learn(with_mesh(fun(Pool, Realm) ->
+        macula:call(Pool, Realm, <<"hecate_graph.learn_link">>,
+                   #{subject => Subject, predicate => Predicate, object => Object},
+                   ?GRAPH_CALL_TIMEOUT_MS)
+    end)).
+
+settle_learn({ok, _}) ->
+    {ok, #{ack => <<"taught the graph">>}};
+settle_learn(_Failed) ->
+    {ok, #{ack => <<"graph_learn failed">>}}.
+
+%% --- graph_ask_entity / graph_ask_links: granted capabilities, real
+%% effect (hecate_graph.narrate_entity / .narrate_link) ---
+
+graph_ask_entity(<<>>) ->
+    {error, empty_entity};
+graph_ask_entity(Entity) ->
+    settle_graph_prose(with_mesh(fun(Pool, Realm) ->
+        macula:call(Pool, Realm, <<"hecate_graph.narrate_entity">>,
+                   #{entity_id => Entity}, ?GRAPH_CALL_TIMEOUT_MS)
+    end)).
+
+graph_ask_links(<<>>, _Predicate, _Direction, _Depth) ->
+    {error, empty_subject};
+graph_ask_links(Subject, Predicate, Direction, Depth) ->
+    Params = trim_undefined(#{subject => Subject, predicate => Predicate,
+                              direction => Direction, depth => as_int(Depth)}),
+    settle_graph_prose(with_mesh(fun(Pool, Realm) ->
+        macula:call(Pool, Realm, <<"hecate_graph.narrate_link">>, Params, ?GRAPH_CALL_TIMEOUT_MS)
+    end)).
+
+trim_undefined(Map) ->
+    maps:filter(fun(_K, V) -> V =/= undefined end, Map).
+
+%% A narrate_* reply crosses the mesh, so `prose' may arrive atom- or
+%% binary-keyed (same reason hit_text/1 above tries both).
+settle_graph_prose({ok, #{prose := Prose}}) when is_binary(Prose) ->
+    {ok, #{scratchpad => Prose, ack => <<"graph's answer is in your scratchpad">>}};
+settle_graph_prose({ok, #{<<"prose">> := Prose}}) when is_binary(Prose) ->
+    {ok, #{scratchpad => Prose, ack => <<"graph's answer is in your scratchpad">>}};
+settle_graph_prose({ok, _NoProse}) ->
+    {ok, #{ack => <<"the graph had nothing to say">>}};
+settle_graph_prose(_Failed) ->
+    {ok, #{ack => <<"graph ask failed">>}}.
 
 %% --- speak goes to the square, not the Soul ---
 speak(<<>>, _Did) ->

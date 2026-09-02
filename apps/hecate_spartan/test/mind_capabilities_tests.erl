@@ -19,6 +19,12 @@ schema_has_rag_search_and_reach_web_test() ->
     ?assert(lists:member(rag_search, Ids)),
     ?assert(lists:member(reach_web, Ids)).
 
+schema_has_the_graph_capabilities_test() ->
+    Ids = [Id || #{id := Id} <- mind_capabilities:schema()],
+    ?assert(lists:member(graph_learn, Ids)),
+    ?assert(lists:member(graph_ask_entity, Ids)),
+    ?assert(lists:member(graph_ask_links, Ids)).
+
 %% --- live-soul reads + short-circuit grant paths ---
 
 mind_capabilities_test_() ->

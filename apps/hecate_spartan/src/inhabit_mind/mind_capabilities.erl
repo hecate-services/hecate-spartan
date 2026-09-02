@@ -15,7 +15,8 @@
 
 -export([schema/0, granted/1, has/2, grant/2]).
 
--type id() :: rag_search | rag_contribute | reach_web.
+-type id() :: rag_search | rag_contribute | reach_web
+            | graph_learn | graph_ask_entity | graph_ask_links.
 -export_type([id/0]).
 
 %% @doc The declared, grantable capabilities a mind may ask for. Adding one
@@ -37,7 +38,24 @@ schema() ->
                         "society's compounding, shared memory, distinct from "
                         "a mind's own private Knowledge Library (learn).">>},
      #{id => reach_web, tool => <<"reach_web">>,
-       description => <<"Fetch a single web page by URL and read its text.">>}].
+       description => <<"Fetch a single web page by URL and read its text.">>},
+     %% Attribution note, honest about a real limit: a write here is made
+     %% through hecate-spartan's own mesh connection, not a connection of
+     %% the mind's own -- hecate-graph's provenance records the wire-
+     %% authenticated caller, which is this spartan instance, not the
+     %% individual mind. Granted per-mind for the mind's own sense of
+     %% "have I told the graph this", not for individual credit there yet.
+     #{id => graph_learn, tool => <<"graph_learn">>,
+       description => <<"Teach the shared knowledge graph (hecate-graph) a "
+                        "relationship: subject, predicate, object. Other "
+                        "minds' graph_ask_* calls can find it after.">>},
+     #{id => graph_ask_entity, tool => <<"graph_ask_entity">>,
+       description => <<"Ask the shared knowledge graph what it knows about "
+                        "one thing, in prose.">>},
+     #{id => graph_ask_links, tool => <<"graph_ask_links">>,
+       description => <<"Ask the shared knowledge graph how one thing "
+                        "relates to others, in prose — optionally filtered "
+                        "by relationship, direction, or hop depth.">>}].
 
 %% @doc This mind's currently granted capabilities.
 -spec granted(binary()) -> [id()].

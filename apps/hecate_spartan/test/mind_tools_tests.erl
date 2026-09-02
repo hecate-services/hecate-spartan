@@ -21,7 +21,16 @@ manifest_test_() ->
       fun granted_capability_tool_appears_next_manifest/1,
       fun execute_refuses_an_ungranted_capability_even_if_called/1,
       fun reach_web_refuses_private_and_loopback_hosts/1,
-      fun reach_web_refuses_a_non_http_scheme/1]}.
+      fun reach_web_refuses_a_non_http_scheme/1,
+      fun rag_contribute_never_crashes_on_a_dark_mesh/1,
+      fun graph_capability_tools_are_absent_until_granted/1,
+      fun graph_tools_appear_once_granted/1,
+      fun execute_refuses_ungranted_graph_learn_even_if_called/1,
+      fun graph_learn_rejects_empty_fields_before_dispatch/1,
+      fun graph_ask_entity_rejects_empty_entity_before_dispatch/1,
+      fun graph_ask_links_rejects_empty_subject_before_dispatch/1,
+      fun graph_learn_never_crashes_on_a_dark_mesh/1,
+      fun graph_ask_entity_never_crashes_on_a_dark_mesh/1]}.
 
 setup() ->
     Dir = iolist_to_binary(filename:join(
@@ -129,6 +138,104 @@ reach_web_refuses_a_non_http_scheme(Dir) ->
 
 reach_via_tool(Did, Url) ->
     Call = #{name => <<"reach_web">>, args => #{<<"url">> => Url}},
+    mind_tools:execute(Call, #{did => Did}).
+
+%% hecate_om isn't running under eunit, same as every other mesh-calling
+%% test in this suite — with_mesh/1's own client/realm lookups must
+%% degrade to a friendly ack, not crash the mind's whole reasoning turn
+%% over a dark mesh.
+rag_contribute_never_crashes_on_a_dark_mesh(Dir) ->
+    fun() ->
+        Did = open_fresh(Dir),
+        ok = soul:set_capabilities(Did, <<"rag_contribute\n">>),
+        Call = #{name => <<"rag_contribute">>,
+                 args => #{<<"title">> => <<"t">>, <<"content">> => <<"c">>}},
+        ?assertEqual({ok, #{ack => <<"contribution failed: mesh_unavailable">>}},
+                     mind_tools:execute(Call, #{did => Did}))
+    end.
+
+graph_capability_tools_are_absent_until_granted(Dir) ->
+    fun() ->
+        Did = open_fresh(Dir),
+        Names = [tool_name(T) || T <- mind_tools:manifest(Did)],
+        ?assertNot(lists:member(<<"graph_learn">>, Names)),
+        ?assertNot(lists:member(<<"graph_ask_entity">>, Names)),
+        ?assertNot(lists:member(<<"graph_ask_links">>, Names))
+    end.
+
+graph_tools_appear_once_granted(Dir) ->
+    fun() ->
+        Did = open_fresh(Dir),
+        ok = soul:set_capabilities(Did, <<"graph_learn\ngraph_ask_entity\ngraph_ask_links\n">>),
+        Names = [tool_name(T) || T <- mind_tools:manifest(Did)],
+        ?assert(lists:member(<<"graph_learn">>, Names)),
+        ?assert(lists:member(<<"graph_ask_entity">>, Names)),
+        ?assert(lists:member(<<"graph_ask_links">>, Names))
+    end.
+
+execute_refuses_ungranted_graph_learn_even_if_called(Dir) ->
+    fun() ->
+        Did = open_fresh(Dir),
+        Call = #{name => <<"graph_learn">>,
+                 args => #{<<"subject">> => <<"s">>, <<"predicate">> => <<"p">>,
+                           <<"object">> => <<"o">>}},
+        ?assertEqual({error, {capability_not_granted, graph_learn}},
+                     mind_tools:execute(Call, #{did => Did}))
+    end.
+
+graph_learn_rejects_empty_fields_before_dispatch(Dir) ->
+    fun() ->
+        Did = open_fresh(Dir),
+        ok = soul:set_capabilities(Did, <<"graph_learn\n">>),
+        Base = #{<<"subject">> => <<"s">>, <<"predicate">> => <<"p">>, <<"object">> => <<"o">>},
+        [?assertEqual({error, empty_subject},
+                       graph_learn_via_tool(Did, Base#{<<"subject">> := <<>>})),
+         ?assertEqual({error, empty_predicate},
+                       graph_learn_via_tool(Did, Base#{<<"predicate">> := <<>>})),
+         ?assertEqual({error, empty_object},
+                       graph_learn_via_tool(Did, Base#{<<"object">> := <<>>}))]
+    end.
+
+graph_ask_entity_rejects_empty_entity_before_dispatch(Dir) ->
+    fun() ->
+        Did = open_fresh(Dir),
+        ok = soul:set_capabilities(Did, <<"graph_ask_entity\n">>),
+        Call = #{name => <<"graph_ask_entity">>, args => #{<<"entity">> => <<>>}},
+        ?assertEqual({error, empty_entity}, mind_tools:execute(Call, #{did => Did}))
+    end.
+
+graph_ask_links_rejects_empty_subject_before_dispatch(Dir) ->
+    fun() ->
+        Did = open_fresh(Dir),
+        ok = soul:set_capabilities(Did, <<"graph_ask_links\n">>),
+        Call = #{name => <<"graph_ask_links">>, args => #{<<"subject">> => <<>>}},
+        ?assertEqual({error, empty_subject}, mind_tools:execute(Call, #{did => Did}))
+    end.
+
+%% Same class of bug rag_contribute_never_crashes_on_a_dark_mesh caught,
+%% for the new tools that share the same with_mesh/1 helper.
+graph_learn_never_crashes_on_a_dark_mesh(Dir) ->
+    fun() ->
+        Did = open_fresh(Dir),
+        ok = soul:set_capabilities(Did, <<"graph_learn\n">>),
+        Call = #{name => <<"graph_learn">>,
+                 args => #{<<"subject">> => <<"s">>, <<"predicate">> => <<"p">>,
+                           <<"object">> => <<"o">>}},
+        ?assertEqual({ok, #{ack => <<"graph_learn failed">>}},
+                     mind_tools:execute(Call, #{did => Did}))
+    end.
+
+graph_ask_entity_never_crashes_on_a_dark_mesh(Dir) ->
+    fun() ->
+        Did = open_fresh(Dir),
+        ok = soul:set_capabilities(Did, <<"graph_ask_entity\n">>),
+        Call = #{name => <<"graph_ask_entity">>, args => #{<<"entity">> => <<"x">>}},
+        ?assertEqual({ok, #{ack => <<"graph ask failed">>}},
+                     mind_tools:execute(Call, #{did => Did}))
+    end.
+
+graph_learn_via_tool(Did, Args) ->
+    Call = #{name => <<"graph_learn">>, args => Args},
     mind_tools:execute(Call, #{did => Did}).
 
 tool_name(#{function := #{name := N}}) -> N.

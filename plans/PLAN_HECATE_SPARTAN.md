@@ -145,6 +145,21 @@ containment story, not polish.
   every `citizen_reregister_ms` so presence expires cleanly if a mind
   stops calling.
 
+- **2026-09-02 — Graph tooling is granted per-mind, attributed per-service
+  (for now).** `graph_learn`/`graph_ask_entity`/`graph_ask_links` follow
+  `rag_contribute`'s exact shape: a granted L2 capability calls out over
+  spartan's own shared mesh connection (`mind_tools:with_mesh/1`), not a
+  connection of the mind's own. hecate-graph's provenance keys on the
+  wire-authenticated caller (`hecate_om_wire:caller/1`), which for these
+  calls is this spartan instance, not the calling mind's citizen_did — so
+  a mind's graph writes are NOT yet individually attributed there, only
+  service-attributed (which is itself real and signed, just coarser).
+  Solving that needs macula to carry a delegated/UCAN-bearer caller
+  identity distinct from the physical connection's own, so spartan can
+  act on a specific mind's behalf without one mesh connection per mind —
+  not spiked. Until then, per-mind provenance credit in hecate-graph is a
+  known, deliberate limitation, not an oversight.
+
 ## v1 architecture (given the mesh gaps)
 
 Single-instance **in-process broker** for a co-located / single-relay fleet:

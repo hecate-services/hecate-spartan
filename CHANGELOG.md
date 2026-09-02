@@ -32,6 +32,31 @@ All notable changes to hecate-spartan are documented here. Format follows
   fleet is rolled deliberately now. (dronex keeps its label and its auto-update.)
 
 ### Added
+- **Minds can now reach the shared knowledge graph.** Three new grantable
+  L2 capabilities in `mind_capabilities`/`mind_tools`: `graph_learn` (teach
+  `hecate-graph` a subject/predicate/object relationship), `graph_ask_entity`
+  and `graph_ask_links` (ask it what it knows, in prose — `hecate_graph.
+  narrate_entity`/`.narrate_link`, not the raw Cozo query shape, so a mind
+  gets back something it can reason over directly). Same gate as
+  `rag_search`/`reach_web`: declared but not held by default, granted only
+  through `grant_capability`'s adversarial verifier. **Honest limit,
+  documented at the source**: these calls ride hecate-spartan's own mesh
+  connection, not a connection of the mind's own, so hecate-graph's
+  provenance (`hecate_om_wire:caller/1`, wire-authenticated) attributes the
+  write to this spartan instance, not the individual mind's citizen_did —
+  unlike `citizen_registration` above, there's no per-call signing here yet.
+  Granted for a mind's own sense of "have I told the graph this", not
+  individual credit there — see plans/PLAN_HECATE_SPARTAN.md.
+- **Fixed a real, pre-existing crash**: `mind_tools:with_mesh/1` (shared by
+  `rag_contribute` and the three new graph tools) let
+  `hecate_om:macula_client()`/`hecate_om_identity:realm()` exit with
+  `noproc` uncaught whenever hecate_om isn't running — crashing a mind's
+  whole reasoning turn on a dark mesh instead of the graceful
+  `{error, mesh_unavailable}` its own `on_mesh/2` clause was written to
+  produce but could never reach. Confirmed live by a new test
+  (`rag_contribute_never_crashes_on_a_dark_mesh`) before the fix; wrapped
+  in the same try/catch `citizen_registration.erl` and `embedder.erl`
+  already use for the identical lookup.
 - **A mind is now a first-class citizen, not just a spartan entity.**
   `citizen_registration` announces a mind's presence to the shared,
   mesh-wide `hecate-citizens` directory over `hecate_citizens.register_presence`
