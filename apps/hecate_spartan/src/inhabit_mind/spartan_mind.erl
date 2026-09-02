@@ -529,8 +529,8 @@ mem_size(Mem)       -> mind_memory:size(Mem).
 apply_tool_calls(ToolCalls, St) ->
     lists:foldl(fun apply_tool_call/2, St, ToolCalls).
 
-apply_tool_call(Call, #st{name = Name, did = Did} = St) ->
-    case mind_tools:execute(Call, #{did => Did}) of
+apply_tool_call(Call, #st{name = Name, did = Did, priv = Priv, pub = Pub} = St) ->
+    case mind_tools:execute(Call, #{did => Did, priv => Priv, pub => Pub}) of
         {ok, Effect} ->
             apply_effect(Effect, St);
         {error, Reason} ->

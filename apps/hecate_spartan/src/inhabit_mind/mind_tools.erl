@@ -302,9 +302,10 @@ execute(#{name := <<"rag_contribute">>, args := A}, #{did := Did}) ->
     end);
 execute(#{name := <<"reach_web">>, args := A}, #{did := Did}) ->
     guarded(reach_web, Did, fun() -> reach_web(gv(<<"url">>, A, <<>>)) end);
-execute(#{name := <<"graph_learn">>, args := A}, #{did := Did}) ->
+execute(#{name := <<"graph_learn">>, args := A}, #{did := Did, priv := Priv, pub := Pub}) ->
     guarded(graph_learn, Did, fun() ->
-        graph_learn(gv(<<"subject">>, A, <<>>), gv(<<"predicate">>, A, <<>>), gv(<<"object">>, A, <<>>))
+        graph_learn(gv(<<"subject">>, A, <<>>), gv(<<"predicate">>, A, <<>>), gv(<<"object">>, A, <<>>),
+                    Priv, Pub)
     end);
 execute(#{name := <<"graph_ask_entity">>, args := A}, #{did := Did}) ->
     guarded(graph_ask_entity, Did, fun() -> graph_ask_entity(gv(<<"entity">>, A, <<>>)) end);
@@ -559,26 +560,44 @@ clip(Bin) -> binary:part(Bin, 0, ?REACH_WEB_MAX_BYTES).
 
 %% --- graph_learn: a granted capability, real effect
 %% (hecate_graph.learn_link over macula:call/5, same with_mesh/1 helper
-%% rag_contribute already uses). Attribution note: this call rides
-%% spartan's own mesh connection, not one of the mind's own, so
-%% hecate-graph's provenance (hecate_om_wire:caller/1, wire-
-%% authenticated) records this spartan instance, not the individual
-%% mind's own citizen_did — a known limit, not yet solved, see
-%% plans/PLAN_HECATE_SPARTAN.md. ---
+%% rag_contribute already uses).
+%%
+%% Mind-grained provenance (PLAN_HECATE_SPARTAN.md, 2026-09-02): this
+%% call rides spartan's own shared mesh connection, not one of the
+%% mind's own, so hecate-graph's wire-level caller
+%% (hecate_om_wire:caller/1) would otherwise always be this spartan
+%% instance, never the individual mind. `asserted_by' supplies the
+%% mind's own identity instead, proven by a signature over
+%% `{Pub, Ts, Procedure}' -- the exact scheme
+%% hecate_om_ownership_proof:verify/3 checks on hecate-graph's side
+%% (requires hecate_om >= 0.23.0 there; this call degrades to
+%% service-level attribution against an older hecate-graph, same as an
+%% absent asserted_by always has).
 -define(GRAPH_CALL_TIMEOUT_MS, 10000).
+-define(GRAPH_LEARN_PROCEDURE, <<"hecate_graph.learn_link">>).
 
-graph_learn(<<>>, _Predicate, _Object) ->
+graph_learn(<<>>, _Predicate, _Object, _Priv, _Pub) ->
     {error, empty_subject};
-graph_learn(_Subject, <<>>, _Object) ->
+graph_learn(_Subject, <<>>, _Object, _Priv, _Pub) ->
     {error, empty_predicate};
-graph_learn(_Subject, _Predicate, <<>>) ->
+graph_learn(_Subject, _Predicate, <<>>, _Priv, _Pub) ->
     {error, empty_object};
-graph_learn(Subject, Predicate, Object) ->
+graph_learn(Subject, Predicate, Object, Priv, Pub) ->
     settle_learn(with_mesh(fun(Pool, Realm) ->
-        macula:call(Pool, Realm, <<"hecate_graph.learn_link">>,
-                   #{subject => Subject, predicate => Predicate, object => Object},
+        macula:call(Pool, Realm, ?GRAPH_LEARN_PROCEDURE,
+                   #{subject => Subject, predicate => Predicate, object => Object,
+                     asserted_by => asserted_by_claim(Priv, Pub)},
                    ?GRAPH_CALL_TIMEOUT_MS)
     end)).
+
+asserted_by_claim(Priv, Pub) ->
+    Ts = erlang:system_time(millisecond),
+    Message = hecate_om_ownership_proof:message(Pub, Ts, ?GRAPH_LEARN_PROCEDURE),
+    Sig = crypto:sign(eddsa, none, Message, [Priv, ed25519]),
+    #{
+        identity => binary:encode_hex(Pub, lowercase),
+        proof => #{timestamp => Ts, signature => binary:encode_hex(Sig, lowercase)}
+    }.
 
 settle_learn({ok, _}) ->
     {ok, #{ack => <<"taught the graph">>}};

@@ -32,6 +32,20 @@ All notable changes to hecate-spartan are documented here. Format follows
   fleet is rolled deliberately now. (dronex keeps its label and its auto-update.)
 
 ### Added
+- **`graph_learn` provenance is now mind-grained, not just service-grained.**
+  Bumped `hecate_om` `~> 0.10` -> `~> 0.23` (last touched at 0.10; the jump
+  crosses no breaking change here, verified by the full 255-test suite plus
+  elvis both clean against it) for `hecate_om_ownership_proof`, the shared
+  verifier extracted from hecate-citizens/hecate-mail's own duplicated
+  code once hecate-graph became its third independent consumer.
+  `mind_tools:graph_learn/5` signs `{Pub, Timestamp, "hecate_graph.
+  learn_link"}` with the mind's own already-resident keypair and attaches
+  it as `asserted_by`; hecate-graph's `learn_link` (>= 0.5.0) verifies it
+  independently of the physical connection and uses it in place of the
+  wire-level caller (which would otherwise always be this spartan
+  instance, for every mind it relays). Transitively bumped `macula` from
+  a stale resolved 5.1.0 (too old for `hecate_om_content_downloader`'s
+  `macula_download` behaviour) to 10.13.1.
 - **Minds can now reach the shared knowledge graph.** Three new grantable
   L2 capabilities in `mind_capabilities`/`mind_tools`: `graph_learn` (teach
   `hecate-graph` a subject/predicate/object relationship), `graph_ask_entity`
@@ -39,14 +53,11 @@ All notable changes to hecate-spartan are documented here. Format follows
   narrate_entity`/`.narrate_link`, not the raw Cozo query shape, so a mind
   gets back something it can reason over directly). Same gate as
   `rag_search`/`reach_web`: declared but not held by default, granted only
-  through `grant_capability`'s adversarial verifier. **Honest limit,
-  documented at the source**: these calls ride hecate-spartan's own mesh
-  connection, not a connection of the mind's own, so hecate-graph's
-  provenance (`hecate_om_wire:caller/1`, wire-authenticated) attributes the
-  write to this spartan instance, not the individual mind's citizen_did —
-  unlike `citizen_registration` above, there's no per-call signing here yet.
-  Granted for a mind's own sense of "have I told the graph this", not
-  individual credit there — see plans/PLAN_HECATE_SPARTAN.md.
+  through `grant_capability`'s adversarial verifier. `graph_learn` signs an
+  `asserted_by` claim with the mind's own keypair (same day fix — see
+  below), so its provenance in hecate-graph is attributed to the
+  individual mind, not just this spartan instance; `graph_ask_entity`/
+  `graph_ask_links` are reads and write no provenance either way.
 - **Fixed a real, pre-existing crash**: `mind_tools:with_mesh/1` (shared by
   `rag_contribute` and the three new graph tools) let
   `hecate_om:macula_client()`/`hecate_om_identity:realm()` exit with

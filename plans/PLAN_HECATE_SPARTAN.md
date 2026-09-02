@@ -145,20 +145,22 @@ containment story, not polish.
   every `citizen_reregister_ms` so presence expires cleanly if a mind
   stops calling.
 
-- **2026-09-02 — Graph tooling is granted per-mind, attributed per-service
-  (for now).** `graph_learn`/`graph_ask_entity`/`graph_ask_links` follow
+- **2026-09-02 — Graph tooling granted per-mind; attribution resolved same
+  day.** `graph_learn`/`graph_ask_entity`/`graph_ask_links` follow
   `rag_contribute`'s exact shape: a granted L2 capability calls out over
   spartan's own shared mesh connection (`mind_tools:with_mesh/1`), not a
-  connection of the mind's own. hecate-graph's provenance keys on the
-  wire-authenticated caller (`hecate_om_wire:caller/1`), which for these
-  calls is this spartan instance, not the calling mind's citizen_did — so
-  a mind's graph writes are NOT yet individually attributed there, only
-  service-attributed (which is itself real and signed, just coarser).
-  Solving that needs macula to carry a delegated/UCAN-bearer caller
-  identity distinct from the physical connection's own, so spartan can
-  act on a specific mind's behalf without one mesh connection per mind —
-  not spiked. Until then, per-mind provenance credit in hecate-graph is a
-  known, deliberate limitation, not an oversight.
+  connection of the mind's own. ~~Solving per-mind provenance needs macula
+  to carry a delegated/UCAN-bearer caller identity distinct from the
+  physical connection's own~~ — turned out not to: `graph_learn` now signs
+  an `asserted_by` claim (`mind_tools:asserted_by_claim/2`, the mind's own
+  keypair over `hecate_om_ownership_proof:message/3`) and attaches it to
+  the payload itself, which hecate-graph's `learn_link` verifies
+  independently of the physical connection
+  (`hecate_om_ownership_proof:verify/3`, hecate_om >= 0.23.0). Solved
+  entirely at the application layer, no macula/wire change needed — see
+  hecate-graph's own `PLAN_MESH_TRUTHS_AND_PROVENANCE.md` Phase 1.5.
+  `graph_ask_entity`/`graph_ask_links` are reads and write no provenance,
+  so this doesn't apply to them — nothing to solve there.
 
 ## v1 architecture (given the mesh gaps)
 

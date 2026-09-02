@@ -180,7 +180,7 @@ execute_refuses_ungranted_graph_learn_even_if_called(Dir) ->
                  args => #{<<"subject">> => <<"s">>, <<"predicate">> => <<"p">>,
                            <<"object">> => <<"o">>}},
         ?assertEqual({error, {capability_not_granted, graph_learn}},
-                     mind_tools:execute(Call, #{did => Did}))
+                     mind_tools:execute(Call, mind_ctx(Did)))
     end.
 
 graph_learn_rejects_empty_fields_before_dispatch(Dir) ->
@@ -222,7 +222,7 @@ graph_learn_never_crashes_on_a_dark_mesh(Dir) ->
                  args => #{<<"subject">> => <<"s">>, <<"predicate">> => <<"p">>,
                            <<"object">> => <<"o">>}},
         ?assertEqual({ok, #{ack => <<"graph_learn failed">>}},
-                     mind_tools:execute(Call, #{did => Did}))
+                     mind_tools:execute(Call, mind_ctx(Did)))
     end.
 
 graph_ask_entity_never_crashes_on_a_dark_mesh(Dir) ->
@@ -236,7 +236,14 @@ graph_ask_entity_never_crashes_on_a_dark_mesh(Dir) ->
 
 graph_learn_via_tool(Did, Args) ->
     Call = #{name => <<"graph_learn">>, args => Args},
-    mind_tools:execute(Call, #{did => Did}).
+    mind_tools:execute(Call, mind_ctx(Did)).
+
+%% graph_learn's context needs a live keypair to sign asserted_by with,
+%% same shape spartan_mind:apply_tool_call/2 always supplies in
+%% production now (every tool call, not just graph_learn's).
+mind_ctx(Did) ->
+    {Pub, Priv} = crypto:generate_key(eddsa, ed25519),
+    #{did => Did, priv => Priv, pub => Pub}.
 
 tool_name(#{function := #{name := N}}) -> N.
 
