@@ -85,7 +85,7 @@ nvidia_model_env_overrides_test() ->
 
 nvidia_model_defaults_when_unset_test() ->
     with_unset("NVIDIA_MODEL", fun() ->
-        ?assertEqual(<<"meta/llama-3.3-70b-instruct">>,
+        ?assertEqual(<<"moonshotai/kimi-k3">>,
                      maps:get(model, spartan_mind_llm:provider_config("nvidia")))
     end).
 

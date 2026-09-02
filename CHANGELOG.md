@@ -5,6 +5,26 @@ All notable changes to hecate-spartan are documented here. Format follows
 
 ## [Unreleased]
 
+### Fixed
+- **The NVIDIA carousel slot had been silently dead for a week.** The
+  hardcoded default model, `meta/llama-3.3-70b-instruct` (verified
+  working 2026-08-24), reached NIM end-of-life 2026-08-26T09:00:00Z —
+  every `nvidia` attempt since has failed with HTTP 410 and rotated
+  straight to the next provider, invisible unless something reads the
+  `[spartan_mind_llm] ... rotating` info log. Found live 2026-09-02
+  scanning for a free model to bring minds up on. Replaced with
+  `moonshotai/kimi-k3`, verified with a real `tool_calls` round trip
+  (not just a chat reply) on the account's actual key. Also confirmed,
+  the hard way: **being listed in `/v1/models` is not the same as being
+  enabled for an account** — `nvidia/llama-3.1-nemotron-70b-instruct`
+  and `nvidia/nemotron-nano-3-30b-a3b` both list and both 404 ("Not
+  found for account") on a real call. Deliberately not
+  `openai/gpt-oss-20b` either (also verified working) — that's already
+  `?GROQ_MODEL`, and reusing it for `nvidia` too would quietly cost the
+  pool the cognitive diversity `spartan_mind_llm`'s own moduledoc names
+  as the reason a second, differently-lineaged free engine belongs
+  beside Groq's in the first place.
+
 ## [0.2.0] - 2026-09-02
 
 ### Fixed

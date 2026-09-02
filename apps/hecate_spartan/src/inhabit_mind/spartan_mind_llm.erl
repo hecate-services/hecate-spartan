@@ -12,10 +12,16 @@
 %%%   - cerebras : fast, OpenAI-compatible, GLM model. CEREBRAS_API_KEYS.
 %%%   - groq     : fast, OpenAI-compatible, gpt-oss model. GROQ_API_KEYS.
 %%%   - gemini   : Google generateContent (different shape). GEMINI_API_KEYS.
-%%%   - nvidia   : free-tier NIM catalog, OpenAI-compatible, Llama-3.3 by
-%%%                default. NVIDIA_API_KEYS. Genuine cognitive diversity:
-%%%                the only Meta-lineage engine in the pool, and the only
-%%%                free one wide enough not to weigh down carousel budget.
+%%%   - nvidia   : free-tier NIM catalog, OpenAI-compatible, Kimi K3 by
+%%%                default (Moonshot AI). NVIDIA_API_KEYS. Genuine
+%%%                cognitive diversity: a different lineage than every
+%%%                other provider here, and the only free one wide enough
+%%%                not to weigh down carousel budget. NIM's catalog
+%%%                genuinely moves — the previous default (Llama-3.3-70b)
+%%%                hit end-of-life days after being verified; re-verify a
+%%%                replacement with a real tool_calls round trip, not a
+%%%                /v1/models listing (two Nemotron models list there and
+%%%                both 404 on this account).
 %%%   - deepseek : OpenAI-compatible. DEEPSEEK_API_KEYS. Paid, limited
 %%%                credit — deploy this to fewer minds than the free/wide
 %%%                providers, the same way melious/cerebras already are.
@@ -67,12 +73,27 @@
         ?GEMINI_MODEL ":generateContent").
 -define(NVIDIA_URL, "https://integrate.api.nvidia.com/v1/chat/completions").
 %% Env-driven (NVIDIA_MODEL) — the NIM catalog is large and moves; a
-%% deployment can point at a different free model without a rebuild. The
-%% default is verified working (real tool_calls, real usage accounting)
-%% against this deployment's keys as of 2026-08-24. No GLM model exists in
-%% the catalog right now despite what a key's filename might suggest —
-%% checked via /v1/models, not assumed.
--define(NVIDIA_MODEL_DEFAULT, <<"meta/llama-3.3-70b-instruct">>).
+%% deployment can point at a different free model without a rebuild.
+%%
+%% meta/llama-3.3-70b-instruct (verified 2026-08-24) reached NIM end-of-
+%% life 2026-08-26T09:00:00Z (HTTP 410 Gone, confirmed live 2026-09-02) --
+%% every NVIDIA attempt had been silently failing straight to the next
+%% carousel slot for the past week, invisible unless something reads
+%% [spartan_mind_llm] ... rotating logs. Listed-in-/v1/models is NOT the
+%% same as enabled-for-this-account either: nvidia/llama-3.1-nemotron-
+%% 70b-instruct and nvidia/nemotron-nano-3-30b-a3b both list, both 404
+%% ("Not found for account") on a real call -- verify with an actual
+%% chat completion, not a models listing.
+%%
+%% moonshotai/kimi-k3 is the replacement: verified live 2026-09-02 with a
+%% real tool_calls round trip (finish_reason=tool_calls, well-formed
+%% arguments), not just a chat reply. Deliberately not openai/gpt-oss-20b
+%% (also verified working here) -- that's already ?GROQ_MODEL above, and
+%% reusing it for nvidia too would quietly cost this pool the "genuine
+%% cognitive diversity" this module's own moduledoc names as the reason
+%% for a Meta/Moonshot-lineage engine sitting beside Groq's OpenAI-oss one
+%% in the first place.
+-define(NVIDIA_MODEL_DEFAULT, <<"moonshotai/kimi-k3">>).
 -define(DEEPSEEK_URL, "https://api.deepseek.com/v1/chat/completions").
 -define(DEEPSEEK_MODEL_DEFAULT, <<"deepseek-chat">>).
 %% colibrì — sovereign LOCAL inference (colibri serve, OpenAI-compatible). The
