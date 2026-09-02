@@ -103,7 +103,7 @@ publish(Question, Asker) ->
     PostId = binary:encode_hex(crypto:strong_rand_bytes(16), lowercase),
     %% A visitor's question is unprompted speech: no sensor handed it to us.
     Cmd = publish_to_agora_v1:new(PostId, ?VISITOR_DID, Body, undefined,
-                                  erlang:system_time(millisecond), undefined),
+                                  erlang:system_time(millisecond), undefined, undefined),
     catch maybe_publish_to_agora:dispatch(Cmd),
     ok.
 

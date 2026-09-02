@@ -25,7 +25,8 @@
 
 -export([start_link/1]).
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2, terminate/2]).
--export([decide/5]).   %% the pre-LLM engagement gate, pure, exported for tests
+-export([decide/5, decide/6]).   %% the pre-LLM engagement gate, pure, exported for tests
+-export([thread_cap/0, synthesizer/0]).
 -export([news_signals/1]).   %% structured stimulus signal, pure, exported for tests
 -export([feed_topics/0]).   %% a mind's configured feed subscription, pure, exported for tests
 
@@ -45,6 +46,8 @@
 %% app-env `mind_cooldown_ms'. Default raised to 60s: at paid providers, once
 %% every 15s across a society was a real cost driver — 1 min is calmer + cheaper.
 -define(DEFAULT_COOLDOWN_MS, 60000).
+%% Voices per story before it closes. See thread_cap/0.
+-define(DEFAULT_THREAD_CAP, 4).
 
 %% When a broadcast lands, the whole society reacts at once. Spread the reasoning
 %% over a few seconds so eight minds do not hit the (load-sensitive) Melious
@@ -91,6 +94,9 @@
              %% turn (a self-alert, a committee) clears it rather than citing
              %% the previous turn's news item. See `agora_stimulus'.
              stimulus     :: agora_stimulus:stimulus() | undefined,
+             %% `synthesis' while this turn is a closing word, so `speak' marks
+             %% the post as one. Cleared on every ordinary react.
+             kind         :: synthesis | undefined,
              busy = false :: boolean()}).
 
 start_link(Spec) ->
@@ -158,7 +164,9 @@ handle_info({macula_event_gone, _Ref, _Reason}, St) ->
 handle_info({reasoned, Heard, Text, ToolCalls, Tokens}, St) ->
     St1 = apply_tool_calls(ToolCalls, St),
     St2 = remember_turn(Heard, Text, ToolCalls, Tokens, St1),
-    {noreply, St2#st{busy = false}};
+    %% `kind' belongs to the turn, never to the mind: a closing word must not
+    %% make every later post a conclusion too.
+    {noreply, St2#st{busy = false, kind = undefined}};
 handle_info({reasoning_failed, Why}, #st{name = Name} = St) ->
     logger:notice("[spartan_mind] ~ts could not reason: ~p", [Name, Why]),
     {noreply, St#st{busy = false}};
@@ -317,7 +325,9 @@ react({ok, Message}, Fact, #st{did = Did} = St) ->
     %% so the mind can never wedge deaf-and-busy-forever.
     _ = spawn_monitor(fun() -> run_reasoning(Self, Did, Message, Messages, Tools) end),
     St#st{busy = true,
-          stimulus = agora_stimulus:of_fact(Fact),
+          %% A closing turn arrives with its stimulus and kind already set (see
+          %% close_with/4) and an empty Fact, so do not overwrite them.
+          stimulus = carried(agora_stimulus:of_fact(Fact), St#st.stimulus),
           last_reasoned = erlang:system_time(millisecond)};
 %% Its own post coming back round the agora. Nothing was missed — it already
 %% knows what it said — so note the decline but do not re-observe it.
@@ -329,10 +339,68 @@ react({declined, own_speech}, _Fact, #st{did = Did} = St) ->
 %% of what it lived through was a biased sample — whatever happened to arrive at a
 %% quiet moment. Gene accumulates every observation whether or not a call fires
 %% (spartan.py:3408-3444). Record it, cheaply, with no LLM.
+%% A FULL THREAD is the synthesizer's cue, not merely a decline. Every other
+%% mind steps back; the one mind whose job it is writes the closing word, and
+%% the story is finished rather than abandoned. Without this a thread just
+%% stops, which is what the record has always looked like.
+react({declined, thread_full}, Fact, #st{did = Did} = St) ->
+    _ = mind_journal:append(Did, stimulus_declined_v1, #{reason => thread_full}),
+    maybe_close(closable(Fact, St), Fact, St);
 react({declined, Reason}, Fact, #st{did = Did} = St) ->
     _ = mind_journal:append(Did, stimulus_declined_v1, #{reason => Reason}),
     _ = catch memory:observe(Did, unheard(mget(body, Fact))),
     St.
+
+%% Whether THIS mind should close THIS story now: it is the synthesizer, the
+%% story is real, and nobody has closed it yet.
+closable(Fact, #st{busy = Busy}) ->
+    closable_story(synthesizer(), Busy, agora_stimulus:of_fact(Fact)).
+
+closable_story(true, false, #{item_id := ItemId} = Stimulus) ->
+    unclosed(catch hecate_spartan_agora:closed(ItemId), Stimulus);
+closable_story(_NotMine, _Busy, _Stimulus) ->
+    false.
+
+unclosed(false, Stimulus) -> {yes, Stimulus};
+unclosed(_ClosedOrUnavailable, _Stimulus) -> false.
+
+maybe_close(false, _Fact, St) ->
+    St;
+maybe_close({yes, Stimulus}, _Fact, #st{did = Did} = St) ->
+    Thread = catch hecate_spartan_agora:thread(maps:get(item_id, Stimulus)),
+    close_with(Thread, Stimulus, Did, St).
+
+close_with(Thread, Stimulus, _Did, St) when is_list(Thread), Thread =/= [] ->
+    %% Reasoned like any other turn, but from a different brief and marked on
+    %% the way out (`kind = synthesis'), so a reader and a consumer can both
+    %% tell a conclusion from another opinion without parsing prose.
+    react({ok, closing_brief(Thread, Stimulus)}, #{}, St#st{stimulus = Stimulus,
+                                                           kind = synthesis});
+close_with(_NoThread, _Stimulus, _Did, St) ->
+    St.
+
+%% The whole thread, and the one instruction that is not "have an opinion".
+closing_brief(Thread, Stimulus) ->
+    Said = [<<"\n- ", (defuse:sanitize(maps:get(body, P, <<>>)))/binary>> || P <- Thread],
+    iolist_to_binary(
+      [<<"[CLOSE] This story has had its voices and is now yours to end. "
+         "Story: ">>, defuse:sanitize(maps:get(title, Stimulus, <<>>)),
+       <<"\n\nWhat the society said:">>, Said,
+       <<"\n\nWrite the CONCLUSION: what was actually established, where the "
+         "society divided and on what, and what remains open. Do not add a new "
+         "opinion of your own and do not restate the takes one by one. If "
+         "nothing was established, say that plainly -- it is a finding.">>]).
+
+%% @doc Whether this mind is the one that closes threads.
+%%
+%% One per society. `HECATE_MIND_SYNTHESIZER=1' on exactly one node: two
+%% synthesizers would each close every thread and the square would end twice.
+-spec synthesizer() -> boolean().
+synthesizer() ->
+    lists:member(os:getenv("HECATE_MIND_SYNTHESIZER"), ["1", "true", "yes"]).
+
+carried(undefined, Carried) -> Carried;
+carried(Sensed, _Carried)    -> Sensed.
 
 %% Marked, so that when the mind next reads its recent history it can see this
 %% arrived while it was occupied and was never reasoned about.
@@ -398,21 +466,72 @@ stimulus(Fact, #st{did = Did, last_reasoned = Last}) ->
 %% own speech was never missed, an empty body is nothing, but a stimulus declined
 %% on cooldown is real input the mind never saw and must still record.
 -spec decide(map(), binary(), integer(), integer(), integer()) ->
-    {ok, binary()} | {declined, own_speech | cooldown | empty}.
+    {ok, binary()} | {declined, own_speech | cooldown | empty | thread_full}.
 decide(Fact, MyDid, LastReasoned, Now, Cooldown) ->
-    heard(mget(from, Fact) =:= MyDid, Fact, Now - LastReasoned >= Cooldown).
+    decide(Fact, MyDid, LastReasoned, Now, Cooldown, thread_room(Fact)).
 
-heard(true, _Fact, _Ready) ->
+%% @doc The same decision with the thread's remaining room passed in, so the
+%% whole gate stays pure and testable without a live feed.
+-spec decide(map(), binary(), integer(), integer(), integer(), boolean()) ->
+    {ok, binary()} | {declined, own_speech | cooldown | empty | thread_full}.
+decide(Fact, MyDid, LastReasoned, Now, Cooldown, Room) ->
+    heard(mget(from, Fact) =:= MyDid, Fact, Now - LastReasoned >= Cooldown, Room).
+
+heard(true, _Fact, _Ready, _Room) ->
     {declined, own_speech};
-heard(false, Fact, Ready) ->
-    consider(mget(body, Fact), Ready).
+heard(false, Fact, Ready, Room) ->
+    consider(mget(body, Fact), Ready, Room).
 
-consider(Body, true) when is_binary(Body), Body =/= <<>> ->
+%% BOUNDED THREADS. A story the society has already answered enough times is
+%% closed to further reaction, which is the forward pressure the square has
+%% never had: without a cap nothing ever ENDS, and a page of forty openings
+%% with no endings is what the record looked like. The cap is checked before
+%% the cooldown so a mind whose turn is up is not spent on a full thread.
+consider(Body, _Ready, false) when is_binary(Body), Body =/= <<>> ->
+    {declined, thread_full};
+consider(Body, true, _Room) when is_binary(Body), Body =/= <<>> ->
     {ok, Body};
-consider(Body, false) when is_binary(Body), Body =/= <<>> ->
+consider(Body, false, _Room) when is_binary(Body), Body =/= <<>> ->
     {declined, cooldown};
-consider(_Body, _Ready) ->
+consider(_Body, _Ready, _Room) ->
     {declined, empty}.
+
+%% Whether this story still has room for another voice.
+%%
+%% Local, and it has to be: every instance hears the whole square, so each
+%% counts from its own table with no RPC and nothing to keep in step. A fact
+%% that is not about a story (a peer's unprompted post, a mission, a
+%% self-alert) is never capped -- only stories are threads.
+thread_room(Fact) ->
+    room(agora_stimulus:of_fact(Fact)).
+
+room(undefined) ->
+    true;
+room(#{item_id := ItemId}) ->
+    catch_room(catch hecate_spartan_agora:thread_size(ItemId)).
+
+catch_room(N) when is_integer(N) -> N < thread_cap();
+%% No feed (early boot, or a test with no ETS table): never cap. Failing
+%% closed here would silence a mind for a reason it could not see.
+catch_room(_Unavailable)         -> true.
+
+%% @doc How many times the society may speak about one story.
+%%
+%% Four, by default: enough for a claim, two answers and a correction, which
+%% is a conversation; few enough that the square moves on. The synthesizer's
+%% closing word is exempt (see `synthesizing/2'), so a full thread still gets
+%% an ending.
+-spec thread_cap() -> pos_integer().
+thread_cap() ->
+    parse_cap(os:getenv("HECATE_MIND_THREAD_CAP")).
+
+parse_cap(V) when is_list(V), V =/= "" ->
+    cap_of(string:to_integer(V));
+parse_cap(_Unset) ->
+    ?DEFAULT_THREAD_CAP.
+
+cap_of({N, _}) when is_integer(N), N > 0 -> N;
+cap_of(_NotAPositiveInteger)             -> ?DEFAULT_THREAD_CAP.
 
 cooldown_ms() ->
     case os:getenv("HECATE_MIND_COOLDOWN_MS") of
@@ -539,7 +658,8 @@ apply_tool_calls(ToolCalls, St) ->
 
 apply_tool_call(Call, #st{name = Name, did = Did, priv = Priv, pub = Pub,
                           stimulus = Stimulus} = St) ->
-    Ctx = #{did => Did, priv => Priv, pub => Pub, stimulus => Stimulus},
+    Ctx = #{did => Did, priv => Priv, pub => Pub, stimulus => Stimulus,
+            kind => St#st.kind},
     case mind_tools:execute(Call, Ctx) of
         {ok, Effect} ->
             apply_effect(Effect, St);

@@ -252,7 +252,7 @@ enum(Values) -> #{type => <<"string">>, enum => Values}.
 -spec execute(map(), map()) -> {ok, map()} | {error, term()}.
 execute(#{name := <<"speak">>, args := A}, #{did := Did} = Ctx) ->
     speak(gv(<<"body">>, A, <<>>), answering(gv(<<"in_reply_to">>, A, <<>>)),
-          maps:get(stimulus, Ctx, undefined), Did);
+          maps:get(stimulus, Ctx, undefined), maps:get(kind, Ctx, undefined), Did);
 execute(#{name := <<"amend_charter">>, args := A}, #{did := Did}) ->
     ok = soul:amend_charter(Did, #{entry_type => gv(<<"entry_type">>, A, <<"principle">>),
                                    statement  => gv(<<"statement">>, A, <<>>),
@@ -648,12 +648,27 @@ settle_graph_prose(_Failed) ->
 %% own process (spartan_mind) and never seen by the model, so a post's sources
 %% are provenance rather than something a model was trusted to name. See
 %% `agora_stimulus'.
-speak(<<>>, _InReplyTo, _Stimulus, _Did) ->
+speak(<<>>, _InReplyTo, _Stimulus, _Kind, _Did) ->
     {error, empty_body};
-speak(Body, InReplyTo, Stimulus, Did) ->
+speak(Body, InReplyTo, Stimulus, Kind, Did) ->
+    heard_first(novelty:permits(Body, Stimulus), Body, InReplyTo, Stimulus, Kind, Did).
+
+%% THE NOVELTY GATE. A draft that says what this story already contains does
+%% not reach the square. See `novelty' for why an instruction could not do
+%% this job and a gate can.
+%%
+%% The mind is told, in the tool result, that it stayed silent and what it
+%% would have echoed. That matters: a silence a mind cannot see is a silence
+%% it cannot learn from, and this is the one path where the society acts on
+%% a mind's behalf.
+heard_first({declined, {echo, Score, Echoed}}, _Body, _R, _S, _K, Did) ->
+    _ = mind_journal:append(Did, speech_withheld_v1,
+                            #{reason => echo, echoed => Echoed, similarity => Score}),
+    {ok, #{ack => <<"stayed silent: this story already says that">>}};
+heard_first(ok, Body, InReplyTo, Stimulus, Kind, Did) ->
     PostId = binary:encode_hex(crypto:strong_rand_bytes(16), lowercase),
     Cmd = publish_to_agora_v1:new(PostId, Did, Body, InReplyTo,
-                                  erlang:system_time(millisecond), Stimulus),
+                                  erlang:system_time(millisecond), Stimulus, Kind),
     case maybe_publish_to_agora:dispatch(Cmd) of
         {ok, _V, _E}   -> {ok, #{ack => <<"spoke in the agora">>}};
         {error, _} = E -> E

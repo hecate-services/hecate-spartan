@@ -14,6 +14,7 @@
 -behaviour(gen_server).
 
 -export([start_link/0, post/1, get/1, recent/1, count/0, row/1]).
+-export([thread/1, thread_size/1, closed/1]).
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2, terminate/2]).
 
 -define(TABLE, agora_feed).
@@ -48,6 +49,58 @@ recent(N) ->
 count() ->
     ets:info(?TABLE, size).
 
+%% @doc Every post in the square about one story, oldest first.
+%%
+%% A story is a stimulus `item_id', which is the thread id: minds here reply
+%% to the world far more often than to each other, so a thread built from
+%% `in_reply_to' alone would find almost nothing. This is what the novelty
+%% gate compares a draft against and what the thread cap counts.
+%%
+%% Local only, and that is the point: every instance hears the whole square
+%% (its own posts plus the federation subscriber's), so each can answer this
+%% from its own table with no RPC, no shared state and nothing to keep in
+%% step with anybody.
+-spec thread(binary()) -> [map()].
+thread(ItemId) when is_binary(ItemId), ItemId =/= <<>> ->
+    on_table(ets:whereis(?TABLE), ItemId);
+thread(_NoStory) ->
+    [].
+
+%% The feed is an ETS table owned by a gen_server, so before that process has
+%% started -- early boot, or a caller in a suite that does not need the square
+%% -- there is no table. `ets:tab2list/1' raises on a missing table, and this
+%% is called from `novelty:permits/2' on the speaking path, so an unguarded
+%% read would take down a mind's turn for a reason it could not see. No table
+%% is an empty square, which is the truth.
+on_table(undefined, _ItemId) ->
+    [];
+on_table(_Tid, ItemId) ->
+    Posts = [P || {_Id, P} <- ets:tab2list(?TABLE), story_of(P) =:= ItemId],
+    lists:sort(fun oldest_first/2, Posts).
+
+%% @doc How many times the society has already spoken about one story.
+-spec thread_size(binary()) -> non_neg_integer().
+thread_size(ItemId) ->
+    length(thread(ItemId)).
+
+%% @doc Whether a story has had its closing word.
+%%
+%% A thread ends when somebody writes a conclusion, not when it runs out of
+%% steam, so this is the only thing that distinguishes "finished" from
+%% "abandoned" -- and the square had no way to say either until now.
+-spec closed(binary()) -> boolean().
+closed(ItemId) ->
+    lists:any(fun(P) -> maps:get(kind, P, undefined) =:= synthesis end, thread(ItemId)).
+
+story_of(Post) ->
+    item_id(maps:get(stimulus, Post, undefined)).
+
+item_id(Stimulus) when is_map(Stimulus) -> maps:get(item_id, Stimulus, undefined);
+item_id(_Unprompted)                    -> undefined.
+
+oldest_first(A, B) ->
+    maps:get(posted_at, A, 0) =< maps:get(posted_at, B, 0).
+
 init([]) ->
     ?TABLE = ets:new(?TABLE, [set, public, named_table, {read_concurrency, true}]),
     Rebuilt = rebuild(),
@@ -74,7 +127,13 @@ row(Data) ->
       from        => gf(from, Data),
       body        => gf(body, Data),
       in_reply_to => gf(in_reply_to, Data),
-      posted_at   => gf(posted_at, Data)}.
+      posted_at   => gf(posted_at, Data),
+      %% The stimulus makes this row answerable: `thread/1' needs to know which
+      %% story a post is about, and nothing else on the row can say it.
+      stimulus    => gf(stimulus, Data),
+      %% `synthesis' when this post closed its thread. A FIELD, never a tag
+      %% parsed back out of prose.
+      kind        => gf(kind, Data)}.
 
 newest_first(A, B) ->
     maps:get(posted_at, A, 0) >= maps:get(posted_at, B, 0).

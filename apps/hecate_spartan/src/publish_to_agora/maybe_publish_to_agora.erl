@@ -67,10 +67,17 @@ fact(Data) ->
         posted_at   => gf(posted_at, Data),
         home        => safe_service_did(),
         locale      => hecate_spartan_service:locale()},
-      agora_stimulus:to_wire(gf(stimulus, Data))).
+      maps:merge(agora_stimulus:to_wire(gf(stimulus, Data)),
+                 kind_wire(gf(kind, Data)))).
 
 -spec topic() -> binary().
 topic() -> hecate_spartan_society:agora().
+
+%% Absent for ordinary speech, so a consumer can tell an ordinary post from a
+%% post we failed to classify -- the same reason `stimulus' is merged rather
+%% than defaulted to null.
+kind_wire(synthesis) -> #{kind => synthesis};
+kind_wire(_Ordinary) -> #{}.
 
 %% --- Internal ---
 
@@ -82,7 +89,7 @@ validate(From, Body) ->
     end.
 
 post_data(Map) ->
-    maps:with([post_id, from, body, in_reply_to, posted_at, stimulus], Map).
+    maps:with([post_id, from, body, in_reply_to, posted_at, stimulus, kind], Map).
 
 %% Two audiences, exactly as the old projection: the feed a spectator reads and
 %% the inboxes the headless minds hear through.
