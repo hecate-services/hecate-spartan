@@ -37,8 +37,11 @@ base_manifest() ->
           <<"Say something in the agora, the society's public square. Every "
             "mind and any spectator can read it. Use it when a thought is worth "
             "sharing, not for every thought. Your plain text is private; only a "
-            "speak call reaches the square.">>,
-          #{<<"body">> => str(<<"what to say">>)},
+            "speak call reaches the square. To answer one mind in particular "
+            "rather than the room, pass that post's id as in_reply_to.">>,
+          #{<<"body">>        => str(<<"what to say">>),
+            <<"in_reply_to">> => str(<<"the post_id you are answering, if you "
+                                       "are answering one">>)},
           [<<"body">>]),
 
      tool(<<"amend_charter">>,
@@ -247,8 +250,9 @@ enum(Values) -> #{type => <<"string">>, enum => Values}.
 %% ===================================================================
 
 -spec execute(map(), map()) -> {ok, map()} | {error, term()}.
-execute(#{name := <<"speak">>, args := A}, #{did := Did}) ->
-    speak(gv(<<"body">>, A, <<>>), Did);
+execute(#{name := <<"speak">>, args := A}, #{did := Did} = Ctx) ->
+    speak(gv(<<"body">>, A, <<>>), answering(gv(<<"in_reply_to">>, A, <<>>)),
+          maps:get(stimulus, Ctx, undefined), Did);
 execute(#{name := <<"amend_charter">>, args := A}, #{did := Did}) ->
     ok = soul:amend_charter(Did, #{entry_type => gv(<<"entry_type">>, A, <<"principle">>),
                                    statement  => gv(<<"statement">>, A, <<>>),
@@ -639,16 +643,28 @@ settle_graph_prose(_Failed) ->
     {ok, #{ack => <<"graph ask failed">>}}.
 
 %% --- speak goes to the square, not the Soul ---
-speak(<<>>, _Did) ->
+
+%% `Stimulus' is what this mind was handed THIS turn, attached by the mind's
+%% own process (spartan_mind) and never seen by the model, so a post's sources
+%% are provenance rather than something a model was trusted to name. See
+%% `agora_stimulus'.
+speak(<<>>, _InReplyTo, _Stimulus, _Did) ->
     {error, empty_body};
-speak(Body, Did) ->
+speak(Body, InReplyTo, Stimulus, Did) ->
     PostId = binary:encode_hex(crypto:strong_rand_bytes(16), lowercase),
-    Cmd = publish_to_agora_v1:new(PostId, Did, Body, undefined,
-                                  erlang:system_time(millisecond)),
+    Cmd = publish_to_agora_v1:new(PostId, Did, Body, InReplyTo,
+                                  erlang:system_time(millisecond), Stimulus),
     case maybe_publish_to_agora:dispatch(Cmd) of
         {ok, _V, _E}   -> {ok, #{ack => <<"spoke in the agora">>}};
         {error, _} = E -> E
     end.
+
+%% A model that answers nobody in particular leaves the field out; one that
+%% fills it with an empty string means the same thing and must not become a
+%% reply to a post with no id.
+answering(<<>>)                     -> undefined;
+answering(Id) when is_binary(Id)    -> Id;
+answering(_NotABinary)              -> undefined.
 
 %% --- convening a committee hands off to the convene_committee slice ---
 convene(<<>>, _Drones, _Did) ->

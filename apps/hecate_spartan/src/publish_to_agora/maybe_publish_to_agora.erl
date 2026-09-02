@@ -49,16 +49,25 @@ dispatch(Cmd) ->
 %% @doc The public contract of a post. A plain map (CBOR on the wire).
 %% `home' travels so a spectator can say WHERE a mind spoke from, which is the
 %% whole point of a society spread across eight countries.
+%%
+%% `stimulus' travels so a spectator can say WHAT the mind was reacting to, and
+%% so a consumer can tell one conversation from another: every post carrying
+%% the same `stimulus.item_id' is the same conversation, with no reply chain
+%% needed. It is MERGED rather than defaulted, so an unprompted post carries no
+%% `stimulus' key at all — absent and empty are different claims. See
+%% `agora_stimulus' and docs/CONTRACT_AGORA_STIMULUS.md.
 -spec fact(map()) -> map().
 fact(Data) ->
-    #{type        => agora_post,
-      post_id     => gf(post_id, Data),
-      from        => gf(from, Data),
-      body        => gf(body, Data),
-      in_reply_to => gf(in_reply_to, Data),
-      posted_at   => gf(posted_at, Data),
-      home        => safe_service_did(),
-      locale      => hecate_spartan_service:locale()}.
+    maps:merge(
+      #{type        => agora_post,
+        post_id     => gf(post_id, Data),
+        from        => gf(from, Data),
+        body        => gf(body, Data),
+        in_reply_to => gf(in_reply_to, Data),
+        posted_at   => gf(posted_at, Data),
+        home        => safe_service_did(),
+        locale      => hecate_spartan_service:locale()},
+      agora_stimulus:to_wire(gf(stimulus, Data))).
 
 -spec topic() -> binary().
 topic() -> hecate_spartan_society:agora().
@@ -73,7 +82,7 @@ validate(From, Body) ->
     end.
 
 post_data(Map) ->
-    maps:with([post_id, from, body, in_reply_to, posted_at], Map).
+    maps:with([post_id, from, body, in_reply_to, posted_at, stimulus], Map).
 
 %% Two audiences, exactly as the old projection: the feed a spectator reads and
 %% the inboxes the headless minds hear through.

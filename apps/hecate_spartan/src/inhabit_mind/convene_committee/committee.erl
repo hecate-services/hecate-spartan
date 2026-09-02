@@ -286,8 +286,9 @@ usr(Content) -> #{<<"role">> => <<"user">>,   <<"content">> => Content}.
 %% so it carries provenance and lands in reckon-db like every post.
 publish_report(Convener, Header, Body) ->
     Post = <<Header/binary, "\n\n", Body/binary>>,
+    %% The convener's own synthesis of a committee, not a reaction to a signal.
     Cmd = publish_to_agora_v1:new(hex(), Convener, Post, undefined,
-                                  erlang:system_time(millisecond)),
+                                  erlang:system_time(millisecond), undefined),
     catch maybe_publish_to_agora:dispatch(Cmd),
     ok.
 

@@ -46,8 +46,9 @@ gate_post(true, From, Req0, State) ->
 
 do_post(From, Text, InReplyTo, {Req, State}) ->
     PostId = post_id(),
+    %% A human posting over HTTP is unprompted speech: no sensor fact behind it.
     Cmd = publish_to_agora_v1:new(PostId, From, Text, InReplyTo,
-                                  erlang:system_time(millisecond)),
+                                  erlang:system_time(millisecond), undefined),
     case maybe_publish_to_agora:dispatch(Cmd) of
         {ok, _V, _E} ->
             reply(202, #{post_id => PostId, status => <<"published">>}, Req, State);

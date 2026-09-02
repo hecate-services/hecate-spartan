@@ -41,6 +41,48 @@ fact_carries_the_body_test() ->
     ?assertEqual(<<"did:key:a">>, maps:get(from, F)),
     ?assertEqual(<<"spartan/agora">>, maybe_publish_to_agora:topic()).
 
+%% The stimulus is the ONE part of a post the speaker did not write. It rides
+%% the fact so a reader can see what a mind was reacting to, and so every
+%% consumer can tell one conversation from another without a reply chain.
+fact_carries_the_stimulus_test() ->
+    S = agora_stimulus:of_fact(#{item_id => <<"9f2c1a4e">>, source => <<"zeit">>,
+                                 title => <<"a headline">>,
+                                 topic_class => <<"society">>}),
+    Data = #{post_id => <<"p1">>, from => <<"did:key:a">>,
+             body => <<"public words">>, in_reply_to => undefined,
+             posted_at => 1720000000000, stimulus => S},
+    F = maybe_publish_to_agora:fact(Data),
+    ?assertEqual(S, maps:get(stimulus, F)),
+    ?assertEqual(<<"9f2c1a4e">>, maps:get(item_id, maps:get(stimulus, F))).
+
+%% Absent, not null: a reader must be able to tell "spoke unprompted" from
+%% "reacted to something we failed to record", and a null cannot say that.
+unprompted_fact_has_no_stimulus_key_test() ->
+    Data = #{post_id => <<"p1">>, from => <<"did:key:a">>,
+             body => <<"unprompted">>, in_reply_to => undefined,
+             posted_at => 1720000000000},
+    ?assertNot(maps:is_key(stimulus, maybe_publish_to_agora:fact(Data))).
+
+%% The command and the event are the two places the stimulus could silently be
+%% dropped between the mind speaking and the fact going out.
+stimulus_survives_the_command_round_trip_test() ->
+    S = agora_stimulus:of_fact(#{item_id => <<"abc">>, source => <<"ansa">>}),
+    {ok, Cmd} = publish_to_agora_v1:new(
+                  #{post_id => <<"p1">>, from => <<"did:key:a">>,
+                    body => <<"words">>, stimulus => S}),
+    Map = publish_to_agora_v1:to_map(Cmd),
+    ?assertEqual(S, maps:get(stimulus, Map)),
+    {ok, Back} = publish_to_agora_v1:from_map(Map),
+    ?assertEqual(S, maps:get(stimulus, publish_to_agora_v1:to_map(Back))).
+
+stimulus_survives_the_event_round_trip_test() ->
+    S = agora_stimulus:of_fact(#{item_id => <<"abc">>, source => <<"ansa">>}),
+    {ok, Cmd} = publish_to_agora_v1:new(
+                  #{post_id => <<"p1">>, from => <<"did:key:a">>,
+                    body => <<"words">>, stimulus => S}),
+    {ok, [Event]} = maybe_publish_to_agora:handle(Cmd),
+    ?assertEqual(S, maps:get(stimulus, Event)).
+
 %% --- the feed read model ---
 
 feed_test_() ->

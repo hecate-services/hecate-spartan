@@ -72,8 +72,14 @@ manifest_schemas_are_shaped(Dir) ->
         Did = open_fresh(Dir),
         [Speak] = [T || T <- mind_tools:manifest(Did), tool_name(T) =:= <<"speak">>],
         #{type := <<"function">>, function := Fn} = Speak,
-        #{parameters := #{type := <<"object">>, required := Req}} = Fn,
-        ?assertEqual([<<"body">>], Req)
+        #{parameters := #{type := <<"object">>, required := Req,
+                          properties := Props}} = Fn,
+        ?assertEqual([<<"body">>], Req),
+        %% A mind can now answer one peer rather than the room. It could not
+        %% before: the field was hardcoded `undefined' at the single call site,
+        %% and in the whole history of the society no mind had ever set it.
+        ?assert(maps:is_key(<<"in_reply_to">>, Props)),
+        ?assertNot(lists:member(<<"in_reply_to">>, Req))
     end.
 
 ungranted_capability_tools_are_absent(Dir) ->
@@ -263,6 +269,26 @@ empty_speak_is_rejected_before_dispatch_test() ->
     Call = #{name => <<"speak">>, args => #{<<"body">> => <<>>}},
     ?assertEqual({error, empty_body},
                  mind_tools:execute(Call, #{did => <<"did:x">>})).
+
+%% A model that answers nobody leaves the field out; one that fills it with an
+%% empty string means the same thing, and must not become a reply to a post
+%% with no id. The dispatch is exercised by integration (it publishes); what is
+%% pinned here is that both shapes reach it as the same absence.
+speak_reply_target_normalizes_before_dispatch_test() ->
+    Blank = #{name => <<"speak">>,
+              args => #{<<"body">> => <<>>, <<"in_reply_to">> => <<>>}},
+    Missing = #{name => <<"speak">>, args => #{<<"body">> => <<>>}},
+    Ctx = #{did => <<"did:x">>},
+    ?assertEqual(mind_tools:execute(Missing, Ctx), mind_tools:execute(Blank, Ctx)).
+
+%% The stimulus rides in the CONTEXT, not in the args: the model never sees it
+%% and can neither supply nor suppress it. A context without one is a mind
+%% speaking unprompted, which must stay a normal path.
+speak_without_a_stimulus_in_context_is_normal_test() ->
+    Call = #{name => <<"speak">>, args => #{<<"body">> => <<>>}},
+    ?assertEqual({error, empty_body},
+                 mind_tools:execute(Call, #{did => <<"did:x">>,
+                                            stimulus => undefined})).
 
 empty_committee_question_is_rejected_before_convening_test() ->
     Call = #{name => <<"convene_committee">>, args => #{<<"question">> => <<>>}},

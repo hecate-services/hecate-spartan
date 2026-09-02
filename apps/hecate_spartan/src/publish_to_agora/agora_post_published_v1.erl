@@ -2,7 +2,7 @@
 -module(agora_post_published_v1).
 -behaviour(evoq_event).
 
--export([new/1, new/5, to_map/1, from_map/1, event_type/0]).
+-export([new/1, new/6, to_map/1, from_map/1, event_type/0]).
 -export([replay/0]).
 
 %% The square is a feed, not an archive: the read model holds a recent window
@@ -14,7 +14,10 @@
     from        :: binary(),
     body        :: binary(),
     in_reply_to :: binary() | undefined,
-    posted_at   :: integer()
+    posted_at   :: integer(),
+    %% What the speaker was reacting to, copied from the fact it was handed.
+    %% Never authored by the speaker. `undefined' for unprompted speech.
+    stimulus    :: agora_stimulus:stimulus() | undefined
 }).
 
 -opaque agora_post_published_v1() :: #agora_post_published_v1{}.
@@ -24,22 +27,26 @@ event_type() -> <<"agora_post_published_v1">>.
 
 new(#{post_id := P, from := F, body := B} = M) ->
     new(P, F, B, maps:get(in_reply_to, M, undefined),
-        maps:get(posted_at, M, erlang:system_time(millisecond))).
+        maps:get(posted_at, M, erlang:system_time(millisecond)),
+        maps:get(stimulus, M, undefined)).
 
-new(PostId, From, Body, InReplyTo, At) ->
+new(PostId, From, Body, InReplyTo, At, Stimulus) ->
     #agora_post_published_v1{post_id = PostId, from = From, body = Body,
-                             in_reply_to = InReplyTo, posted_at = At}.
+                             in_reply_to = InReplyTo, posted_at = At,
+                             stimulus = Stimulus}.
 
 -spec to_map(agora_post_published_v1()) -> map().
 to_map(#agora_post_published_v1{post_id = P, from = F, body = B,
-                                in_reply_to = R, posted_at = At}) ->
+                                in_reply_to = R, posted_at = At, stimulus = S}) ->
     #{event_type => <<"agora_post_published_v1">>,
-      post_id => P, from => F, body => B, in_reply_to => R, posted_at => At}.
+      post_id => P, from => F, body => B, in_reply_to => R, posted_at => At,
+      stimulus => S}.
 
 -spec from_map(map()) -> {ok, agora_post_published_v1()} | {error, term()}.
 from_map(#{post_id := P, from := F, body := B} = M) ->
     {ok, new(P, F, B, maps:get(in_reply_to, M, undefined),
-             maps:get(posted_at, M, erlang:system_time(millisecond)))};
+             maps:get(posted_at, M, erlang:system_time(millisecond)),
+             maps:get(stimulus, M, undefined))};
 from_map(_) ->
     {error, invalid_agora_post_published_event}.
 

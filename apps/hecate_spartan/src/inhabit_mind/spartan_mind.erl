@@ -85,6 +85,12 @@
              mem_version = 0 :: non_neg_integer(),
              evolver      :: pid() | undefined,
              alerts = []  :: [self_alerts:alert()],
+             %% What this mind is reasoning about RIGHT NOW, held across the
+             %% turn so that if the mind decides to speak, its post can carry
+             %% what it was reacting to. Set on every react, so an unprompted
+             %% turn (a self-alert, a committee) clears it rather than citing
+             %% the previous turn's news item. See `agora_stimulus'.
+             stimulus     :: agora_stimulus:stimulus() | undefined,
              busy = false :: boolean()}).
 
 start_link(Spec) ->
@@ -310,7 +316,9 @@ react({ok, Message}, Fact, #st{did = Did} = St) ->
     %% reporting (a crash the inner catches miss), the DOWN handler clears `busy',
     %% so the mind can never wedge deaf-and-busy-forever.
     _ = spawn_monitor(fun() -> run_reasoning(Self, Did, Message, Messages, Tools) end),
-    St#st{busy = true, last_reasoned = erlang:system_time(millisecond)};
+    St#st{busy = true,
+          stimulus = agora_stimulus:of_fact(Fact),
+          last_reasoned = erlang:system_time(millisecond)};
 %% Its own post coming back round the agora. Nothing was missed — it already
 %% knows what it said — so note the decline but do not re-observe it.
 react({declined, own_speech}, _Fact, #st{did = Did} = St) ->
@@ -529,8 +537,10 @@ mem_size(Mem)       -> mind_memory:size(Mem).
 apply_tool_calls(ToolCalls, St) ->
     lists:foldl(fun apply_tool_call/2, St, ToolCalls).
 
-apply_tool_call(Call, #st{name = Name, did = Did, priv = Priv, pub = Pub} = St) ->
-    case mind_tools:execute(Call, #{did => Did, priv => Priv, pub => Pub}) of
+apply_tool_call(Call, #st{name = Name, did = Did, priv = Priv, pub = Pub,
+                          stimulus = Stimulus} = St) ->
+    Ctx = #{did => Did, priv => Priv, pub => Pub, stimulus => Stimulus},
+    case mind_tools:execute(Call, Ctx) of
         {ok, Effect} ->
             apply_effect(Effect, St);
         {error, Reason} ->

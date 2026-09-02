@@ -8,14 +8,17 @@
 -module(publish_to_agora_v1).
 -behaviour(evoq_command).
 
--export([new/1, new/5, to_map/1, from_map/1, command_type/0]).
+-export([new/1, new/6, to_map/1, from_map/1, command_type/0]).
 
 -record(publish_to_agora_v1, {
     post_id     :: binary(),
     from        :: binary(),
     body        :: binary(),
     in_reply_to :: binary() | undefined,
-    posted_at   :: integer()
+    posted_at   :: integer(),
+    %% What the speaker was reacting to, copied from the fact it was handed.
+    %% Never authored by the speaker. `undefined' for unprompted speech.
+    stimulus    :: agora_stimulus:stimulus() | undefined
 }).
 
 -opaque publish_to_agora_v1() :: #publish_to_agora_v1{}.
@@ -25,23 +28,27 @@ command_type() -> publish_to_agora.
 
 new(#{post_id := P, from := F, body := B} = M) ->
     {ok, new(P, F, B, maps:get(in_reply_to, M, undefined),
-             maps:get(posted_at, M, erlang:system_time(millisecond)))};
+             maps:get(posted_at, M, erlang:system_time(millisecond)),
+             maps:get(stimulus, M, undefined))};
 new(_) ->
     {error, missing_fields}.
 
-new(PostId, From, Body, InReplyTo, At) ->
+new(PostId, From, Body, InReplyTo, At, Stimulus) ->
     #publish_to_agora_v1{post_id = PostId, from = From, body = Body,
-                         in_reply_to = InReplyTo, posted_at = At}.
+                         in_reply_to = InReplyTo, posted_at = At,
+                         stimulus = Stimulus}.
 
 -spec to_map(publish_to_agora_v1()) -> map().
 to_map(#publish_to_agora_v1{post_id = P, from = F, body = B,
-                            in_reply_to = R, posted_at = At}) ->
+                            in_reply_to = R, posted_at = At, stimulus = S}) ->
     #{command_type => <<"publish_to_agora">>,
-      post_id => P, from => F, body => B, in_reply_to => R, posted_at => At}.
+      post_id => P, from => F, body => B, in_reply_to => R, posted_at => At,
+      stimulus => S}.
 
 -spec from_map(map()) -> {ok, publish_to_agora_v1()} | {error, term()}.
 from_map(#{post_id := P, from := F, body := B} = M) ->
     {ok, new(P, F, B, maps:get(in_reply_to, M, undefined),
-             maps:get(posted_at, M, erlang:system_time(millisecond)))};
+             maps:get(posted_at, M, erlang:system_time(millisecond)),
+             maps:get(stimulus, M, undefined))};
 from_map(_) ->
     {error, invalid_publish_to_agora_command}.
