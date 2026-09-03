@@ -16,6 +16,7 @@
 %%% Any key may be absent.
 -module(mind_tools).
 
+-export([answering/2]).   %% which post a spoken reply links to, pure, exported for tests
 -export([manifest/1, execute/2]).
 
 %% ===================================================================
@@ -251,7 +252,7 @@ enum(Values) -> #{type => <<"string">>, enum => Values}.
 
 -spec execute(map(), map()) -> {ok, map()} | {error, term()}.
 execute(#{name := <<"speak">>, args := A}, #{did := Did} = Ctx) ->
-    speak(gv(<<"body">>, A, <<>>), answering(gv(<<"in_reply_to">>, A, <<>>)),
+    speak(gv(<<"body">>, A, <<>>), answering(gv(<<"in_reply_to">>, A, <<>>), Ctx),
           maps:get(stimulus, Ctx, undefined), maps:get(kind, Ctx, undefined), Did);
 execute(#{name := <<"amend_charter">>, args := A}, #{did := Did}) ->
     ok = soul:amend_charter(Did, #{entry_type => gv(<<"entry_type">>, A, <<"principle">>),
@@ -674,12 +675,16 @@ heard_first(ok, Body, InReplyTo, Stimulus, Kind, Did) ->
         {error, _} = E -> E
     end.
 
-%% A model that answers nobody in particular leaves the field out; one that
-%% fills it with an empty string means the same thing and must not become a
-%% reply to a post with no id.
-answering(<<>>)                     -> undefined;
-answering(Id) when is_binary(Id)    -> Id;
-answering(_NotABinary)              -> undefined.
+%% A model that names the post it answers is believed. One that names none
+%% (or fills the field with an empty string) is answering whatever this turn
+%% was a reaction to, if that was a peer's post: the mind's own process knows
+%% which post woke it (`replying_to', see spartan_mind:clocked/3) and the
+%% model never sees an id it could name, so the link is attached here the
+%% same way the stimulus is. A turn woken by a story, not a peer, links to
+%% nothing.
+answering(<<>>, Ctx)                    -> maps:get(replying_to, Ctx, undefined);
+answering(Id, _Ctx) when is_binary(Id)  -> Id;
+answering(_NotABinary, Ctx)             -> maps:get(replying_to, Ctx, undefined).
 
 %% --- convening a committee hands off to the convene_committee slice ---
 convene(<<>>, _Drones, _Did) ->

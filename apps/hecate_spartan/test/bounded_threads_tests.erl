@@ -15,31 +15,37 @@ news(ItemId) ->
       title => <<"a headline">>, source => <<"zeit">>,
       body => <<"[NEWS] something happened">>}.
 
-%% --- the pure gate (decide/6) ---
+%% --- the pure gate (decide/2) ---
+
+gate(Over) ->
+    maps:merge(#{kind => opening, now => 100000, last_opened => 0, last_replied => 0,
+                 cooldown => 1000, reply_cooldown => 1000, room => true},
+               Over).
 
 room_lets_a_ready_mind_speak_test() ->
-    ?assertMatch({ok, _}, spartan_mind:decide(news(<<"s1">>), ?ME, 0, 100000, 1000, true)).
+    ?assertMatch({ok, _}, spartan_mind:decide(news(<<"s1">>), gate(#{room => true}))).
 
 a_full_thread_declines_test() ->
     ?assertEqual({declined, thread_full},
-                 spartan_mind:decide(news(<<"s1">>), ?ME, 0, 100000, 1000, false)).
+                 spartan_mind:decide(news(<<"s1">>), gate(#{room => false}))).
 
-%% Checked BEFORE the cooldown, so a mind whose one turn in five minutes has
+%% Checked BEFORE either clock, so a mind whose one turn in five minutes has
 %% come round is not spent on a story that is already closed.
 a_full_thread_outranks_the_cooldown_test() ->
     ?assertEqual({declined, thread_full},
-                 spartan_mind:decide(news(<<"s1">>), ?ME, 100000, 100000, 1000, false)).
+                 spartan_mind:decide(news(<<"s1">>),
+                                     gate(#{room => false, last_opened => 100000}))).
 
 %% Own speech is still the first thing checked: a mind hearing itself back
 %% has missed nothing, whatever the thread is doing.
 own_speech_still_outranks_everything_test() ->
     Mine = (news(<<"s1">>))#{from => ?ME},
     ?assertEqual({declined, own_speech},
-                 spartan_mind:decide(Mine, ?ME, 0, 100000, 1000, false)).
+                 spartan_mind:decide(Mine, gate(#{kind => own, room => false}))).
 
 an_empty_body_is_still_nothing_test() ->
     ?assertEqual({declined, empty},
-                 spartan_mind:decide(#{from => ?PEER, body => <<>>}, ?ME, 0, 1, 0, true)).
+                 spartan_mind:decide(#{from => ?PEER, body => <<>>}, gate(#{kind => peer}))).
 
 %% --- the cap ---
 

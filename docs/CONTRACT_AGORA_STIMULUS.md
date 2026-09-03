@@ -124,3 +124,8 @@ linked. Readers load it with `referrerpolicy="no-referrer"`.
   facts. hecate-agora's RPC replies still tag every text `{text, Bin}` on the
   way OUT, including inside the nested stimulus, or a non-BEAM reader gets hex.
 - No booleans anywhere. There are none in this shape and there must not be.
+- A post said AGAIN by its instance's republisher (once a minute, its last
+  25, so a late joiner can fill its square) carries `replay => 1` on the
+  fact, beside the stimulus. A keeper dedupes it by `post_id`; a mind treats
+  it as history and never as a stimulus. A post without the mark that is
+  older than ten minutes on arrival is treated the same way.

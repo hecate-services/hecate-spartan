@@ -25,8 +25,10 @@
 
 -export([start_link/1]).
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2, terminate/2]).
--export([decide/5, decide/6]).   %% the pre-LLM engagement gate, pure, exported for tests
--export([thread_cap/0, synthesizer/0]).
+-export([decide/2, kind_of/3]).   %% the pre-LLM engagement gate, pure, exported for tests
+-export([hold/2, pop_held/2]).    %% what a busy mind keeps for later, pure, exported for tests
+-export([heard_new/0, heard_add/2, heard_has/2]).   %% hearing a post once, pure, exported for tests
+-export([thread_cap/0, synthesizer/0, reply_cooldown_ms/0]).
 -export([news_signals/1]).   %% structured stimulus signal, pure, exported for tests
 -export([feed_topics/0]).   %% a mind's configured feed subscription, pure, exported for tests
 
@@ -48,6 +50,22 @@
 -define(DEFAULT_COOLDOWN_MS, 60000).
 %% Voices per story before it closes. See thread_cap/0.
 -define(DEFAULT_THREAD_CAP, 4).
+%% A peer's reply runs on a much shorter clock than a story opening: long
+%% enough that two minds cannot volley, short enough that a conversation is
+%% still a conversation. See clocked/3.
+-define(DEFAULT_REPLY_COOLDOWN_MS, 30000).
+%% A post older than this when it arrives is history being said again, not
+%% speech. federation_agora says every instance's recent posts again once a
+%% minute so a late joiner can fill its square; those carry `replay', and the
+%% age catches the same posts from a peer on an older version.
+-define(HISTORY_MS, 600_000).
+%% Peer posts kept while the mind is busy or on its reply clock: one per
+%% story, this many stories, and dropped unanswered once this old.
+-define(HOLD_MAX, 8).
+-define(HOLD_MAX_AGE_MS, 900_000).
+%% How many post ids a mind remembers having heard, so a post said twice --
+%% republished, or handed over by two stations -- is heard once.
+-define(HEARD_MAX, 512).
 
 %% When a broadcast lands, the whole society reacts at once. Spread the reasoning
 %% over a few seconds so eight minds do not hit the (load-sensitive) Melious
@@ -77,7 +95,20 @@
              missions   = #{}  :: #{binary() => binary()},
              tokens_used = 0   :: non_neg_integer(),
              last_tokens = 0   :: non_neg_integer(),
-             last_reasoned = 0 :: integer(),
+             %% Two clocks, one per kind of turn: when this mind last opened a
+             %% story (or reasoned unprompted) and when it last answered a
+             %% peer. See clocked/3 for why they are not one.
+             last_opened  = 0 :: integer(),
+             last_replied = 0 :: integer(),
+             %% Post ids heard, bounded, so a post said twice is heard once.
+             heard        :: {queue:queue(), sets:set()} | undefined,
+             %% Peers' replies kept while busy or on the reply clock, newest
+             %% per story. See hold/2.
+             held = #{}   :: #{binary() => map()},
+             hold_timer   :: reference() | undefined,
+             %% The peer post this turn answers, so `speak' can link to it
+             %% when the model names no post itself.
+             replying_to  :: binary() | undefined,
              locale     :: binary() | undefined,
              subs = []  :: [reference()],
              memory       :: mind_memory:mem() | undefined,
@@ -122,7 +153,8 @@ init(#{name := Name, character := Brief} = Spec) ->
                 [Name, Did, length(Alerts)]),
     {ok, #st{name = Name, did = Did, priv = Priv, pub = Pub,
              genesis_version = genesis_version(), identity = Identity,
-             missions = seed_missions(), locale = Locale, alerts = Alerts}}.
+             missions = seed_missions(), locale = Locale, alerts = Alerts,
+             heard = heard_new()}}.
 
 handle_call(_Req, _From, St) -> {reply, {error, unknown_call}, St}.
 handle_cast(_Msg, St)        -> {noreply, St}.
@@ -165,11 +197,17 @@ handle_info({reasoned, Heard, Text, ToolCalls, Tokens}, St) ->
     St1 = apply_tool_calls(ToolCalls, St),
     St2 = remember_turn(Heard, Text, ToolCalls, Tokens, St1),
     %% `kind' belongs to the turn, never to the mind: a closing word must not
-    %% make every later post a conclusion too.
-    {noreply, St2#st{busy = false, kind = undefined}};
+    %% make every later post a conclusion too. The turn is over: take up
+    %% whatever a peer said meanwhile.
+    {noreply, resume(St2#st{busy = false, kind = undefined})};
 handle_info({reasoning_failed, Why}, #st{name = Name} = St) ->
     logger:notice("[spartan_mind] ~ts could not reason: ~p", [Name, Why]),
-    {noreply, St#st{busy = false}};
+    {noreply, resume(St#st{busy = false})};
+%% The reply clock a held peer post was waiting on has run out.
+handle_info(resume_held, #st{busy = true} = St) ->
+    {noreply, St#st{hold_timer = undefined}};
+handle_info(resume_held, St) ->
+    {noreply, resume(St#st{hold_timer = undefined})};
 %% A self-alert has come due. It is the mind's own scheduled intent, so it must
 %% NOT go through the cooldown/self-check gate (that throttles external stimulus
 %% spam) — fire it by calling react directly. If the mind is mid-thought, retry
@@ -181,7 +219,7 @@ handle_info({self_alert, Note}, #st{busy = true} = St) ->
 handle_info({self_alert, Note}, St) ->
     Body = <<"[SELF-ALERT] you asked to be reminded: ", Note/binary>>,
     %% A self-alert is the mind's own intent, not a sensed fact — no signal line.
-    {noreply, react({ok, Body}, #{}, St)};
+    {noreply, start_turn(Body, other, #{}, St)};
 %% The reasoning process finished normally (it already reported via {reasoned} /
 %% {reasoning_failed}); nothing to do. An ABNORMAL death with `busy' still set is
 %% a crash that never reported — clear busy so the mind does not go deaf forever.
@@ -194,7 +232,7 @@ handle_info({'DOWN', _Ref, process, _Pid, normal}, St) ->
     {noreply, St};
 handle_info({'DOWN', _Ref, process, _Pid, Reason}, #st{name = Name, busy = true} = St) ->
     logger:notice("[spartan_mind] ~ts reasoning died (~p); clearing busy", [Name, Reason]),
-    {noreply, St#st{busy = false}};
+    {noreply, resume(St#st{busy = false})};
 handle_info({'DOWN', _Ref, process, _Pid, _Reason}, St) ->
     {noreply, St};
 handle_info(_Info, St) ->
@@ -299,19 +337,79 @@ retry(St) ->
 
 %% --- reacting ---
 
-%% A message reaches the mind; it assembles its full context and reasons about
-%% that message in its own voice. One thought at a time: while a reply is in
-%% flight we ignore new stimulus, so a burst does not start overlapping calls.
-maybe_react(Payload, #st{busy = true} = St) when is_map(Payload) ->
-    react({declined, busy}, Payload, St);
-maybe_react(_Payload, #st{busy = true} = St) ->
-    St;
-maybe_react(Payload, St) when is_map(Payload) ->
-    react(stimulus(Payload, St), Payload, St);
+%% Everything a mind hears comes through here, and the first question is not
+%% "may I reason about this" but "have I heard this before". A post arrives
+%% many times: federation_agora says every instance's recent speech again once
+%% a minute so a late joiner can fill its square, and a subscriber dialling
+%% three stations can be handed one fact by more than one of them. Measured on
+%% 2026-09-03: one peer post reached every other mind about forty times in
+%% forty minutes, each arrival treated as new and each one competing for the
+%% single turn the cooldown allows. Ninety-five percent of what a mind heard
+%% was something it had already heard, and the turn went to whichever copy
+%% came first. Hear a post once, and treat history as history.
+maybe_react(Payload, #st{did = Did} = St) when is_map(Payload) ->
+    arrival(kind_of(Payload, Did, now_ms()), Payload, St);
 maybe_react(_Payload, St) ->
     St.
 
-react({ok, Message}, Fact, #st{did = Did} = St) ->
+%% Its own post coming back round the agora. Nothing was missed — it already
+%% knows what it said — so note the decline but do not re-observe it.
+arrival(own, _Fact, #st{did = Did} = St) ->
+    _ = mind_journal:append(Did, stimulus_declined_v1, #{reason => own_speech}),
+    St;
+%% History being said again fills nothing here: the square's own table is
+%% federation_agora's to keep. It is remembered as heard so that the SAME post,
+%% arriving later without the flag, is still not news.
+arrival(replay, Fact, St) ->
+    remember_heard(post_id(Fact), St);
+arrival(peer, Fact, St) ->
+    once(heard_has(post_id(Fact), St#st.heard), Fact, St);
+arrival(Kind, Fact, St) ->
+    consider(Kind, Fact, St).
+
+once(true, _HeardAlready, St) ->
+    St;
+once(false, Fact, St) ->
+    consider(peer, Fact, remember_heard(post_id(Fact), St)).
+
+%% One thought at a time. While a turn is in flight a story opening is let go
+%% (there will be another; they arrive by the minute) and journalled as never
+%% reasoned about, but a peer's reply is KEPT: a reply that lands during the
+%% twenty seconds a turn takes is the whole conversation, and dropping it is
+%% why no mind here had ever answered another.
+consider(peer, Fact, #st{busy = true} = St) ->
+    keep(Fact, St);
+consider(_Kind, Fact, #st{busy = true} = St) ->
+    let_go(busy, Fact, St);
+consider(Kind, Fact, St) ->
+    react(decide(Fact, gate(Kind, Fact, St)), Kind, Fact, St).
+
+react({ok, Message}, Kind, Fact, St) ->
+    start_turn(Message, Kind, Fact, St);
+%% A FULL THREAD is the synthesizer's cue, not merely a decline. Every other
+%% mind steps back; the one mind whose job it is writes the closing word, and
+%% the story is finished rather than abandoned. Without this a thread just
+%% stops, which is what the record has always looked like.
+react({declined, thread_full}, _Kind, Fact, #st{did = Did} = St) ->
+    _ = mind_journal:append(Did, stimulus_declined_v1, #{reason => thread_full}),
+    maybe_close(closable(Fact, St), Fact, St);
+%% On the reply clock: keep it, and come back to it the moment the clock allows.
+react({declined, reply_cooldown}, peer, Fact, St) ->
+    resume_later(keep(Fact, St));
+react({declined, Reason}, _Kind, Fact, St) ->
+    let_go(Reason, Fact, St).
+
+%% DEFECT 3. A stimulus the mind was too busy or too recently-woken to reason
+%% about used to vanish entirely: it never entered STM, so the mind's own record
+%% of what it lived through was a biased sample — whatever happened to arrive at a
+%% quiet moment. Gene accumulates every observation whether or not a call fires
+%% (spartan.py:3408-3444). Record it, cheaply, with no LLM.
+let_go(Reason, Fact, #st{did = Did} = St) ->
+    _ = mind_journal:append(Did, stimulus_declined_v1, #{reason => Reason}),
+    _ = catch memory:observe(Did, unheard(mget(body, Fact))),
+    St.
+
+start_turn(Message, Kind, Fact, #st{did = Did} = St) ->
     Self = self(),
     %% Defuse the stimulus (poison-pill) before it enters context: peers and the
     %% world feed are untrusted. The raw Message is still carried to the reasoned
@@ -324,32 +422,140 @@ react({ok, Message}, Fact, #st{did = Did} = St) ->
     %% reporting (a crash the inner catches miss), the DOWN handler clears `busy',
     %% so the mind can never wedge deaf-and-busy-forever.
     _ = spawn_monitor(fun() -> run_reasoning(Self, Did, Message, Messages, Tools) end),
-    St#st{busy = true,
-          %% A closing turn arrives with its stimulus and kind already set (see
-          %% close_with/4) and an empty Fact, so do not overwrite them.
-          stimulus = carried(agora_stimulus:of_fact(Fact), St#st.stimulus),
-          last_reasoned = erlang:system_time(millisecond)};
-%% Its own post coming back round the agora. Nothing was missed — it already
-%% knows what it said — so note the decline but do not re-observe it.
-react({declined, own_speech}, _Fact, #st{did = Did} = St) ->
-    _ = mind_journal:append(Did, stimulus_declined_v1, #{reason => own_speech}),
+    clocked(Kind, Fact,
+            St#st{busy = true,
+                  %% A closing turn arrives with its stimulus and kind already
+                  %% set (see close_with/4) and an empty Fact, so do not
+                  %% overwrite them.
+                  stimulus = carried(agora_stimulus:of_fact(Fact), St#st.stimulus)}).
+
+%% TWO CLOCKS. Opening a story and answering a peer are not the same act and
+%% do not share a budget. Openings arrive by the minute and are rationed by
+%% the cooldown, which is the cost brake. A reply is bounded by the thread
+%% itself (the cap, the novelty gate, the closing word), so it runs on a clock
+%% short enough to keep a conversation alive and long enough to stop two minds
+%% volleying. A closing word is neither and touches neither.
+clocked(peer, Fact, St) ->
+    St#st{last_replied = now_ms(), replying_to = post_id(Fact)};
+clocked(closing, _Fact, St) ->
+    St#st{replying_to = undefined};
+clocked(_OpeningOrOther, _Fact, St) ->
+    St#st{last_opened = now_ms(), replying_to = undefined}.
+
+%% --- holding a peer's reply until the mind can take it up ---
+
+keep(Fact, #st{held = Held} = St) ->
+    St#st{held = hold(Fact, Held)}.
+
+%% @doc Keep a peer post for later: the newest per story, a bounded number of
+%% stories, the oldest story let go when there are too many. Pure.
+-spec hold(map(), #{binary() => map()}) -> #{binary() => map()}.
+hold(Fact, Held) ->
+    Key = story_key(Fact),
+    bounded(Held#{Key => newer(Fact, maps:get(Key, Held, undefined))}).
+
+newer(Fact, undefined) ->
+    Fact;
+newer(Fact, Kept) ->
+    latest(posted(Fact) >= posted(Kept), Fact, Kept).
+
+latest(true, Fact, _Kept) -> Fact;
+latest(false, _Fact, Kept) -> Kept.
+
+bounded(Held) when map_size(Held) =< ?HOLD_MAX ->
+    Held;
+bounded(Held) ->
+    [{Oldest, _} | _] = lists:sort(fun by_posted/2, maps:to_list(Held)),
+    maps:remove(Oldest, Held).
+
+by_posted({_, A}, {_, B}) -> posted(A) =< posted(B).
+
+%% A story is its own thread; unprompted speech is a thread of one.
+story_key(Fact) ->
+    key_of(agora_stimulus:of_fact(Fact), Fact).
+
+key_of(#{item_id := ItemId}, _Fact) -> ItemId;
+key_of(undefined, Fact)             -> post_id(Fact).
+
+posted(Fact) ->
+    whole(mget(posted_at, Fact)).
+
+whole(N) when is_integer(N) -> N;
+whole(_NotANumber)          -> 0.
+
+%% @doc The held post to take up next (the newest), the rest, and the ones
+%% that grew too old to be worth answering. Pure.
+-spec pop_held(#{binary() => map()}, integer()) -> {map() | none, #{binary() => map()}, [map()]}.
+pop_held(Held, Now) ->
+    {Live, Expired} = lists:partition(fun({_, F}) -> Now - posted(F) =< ?HOLD_MAX_AGE_MS end,
+                                      maps:to_list(Held)),
+    next(lists:reverse(lists:sort(fun by_posted/2, Live)), [F || {_, F} <- Expired]).
+
+next([], Expired)                -> {none, #{}, Expired};
+next([{_, Fact} | Rest], Expired) -> {Fact, maps:from_list(Rest), Expired}.
+
+%% After a turn, or when the reply clock runs out: take up what was held,
+%% one at a time, until a turn starts or nothing is left. What grew too old
+%% while waiting is let go the way an opening that arrived mid-turn is.
+resume(#st{held = Held} = St) when map_size(Held) =:= 0 ->
     St;
-%% DEFECT 3. A stimulus the mind was too busy or too recently-woken to reason
-%% about used to vanish entirely: it never entered STM, so the mind's own record
-%% of what it lived through was a biased sample — whatever happened to arrive at a
-%% quiet moment. Gene accumulates every observation whether or not a call fires
-%% (spartan.py:3408-3444). Record it, cheaply, with no LLM.
-%% A FULL THREAD is the synthesizer's cue, not merely a decline. Every other
-%% mind steps back; the one mind whose job it is writes the closing word, and
-%% the story is finished rather than abandoned. Without this a thread just
-%% stops, which is what the record has always looked like.
-react({declined, thread_full}, Fact, #st{did = Did} = St) ->
-    _ = mind_journal:append(Did, stimulus_declined_v1, #{reason => thread_full}),
-    maybe_close(closable(Fact, St), Fact, St);
-react({declined, Reason}, Fact, #st{did = Did} = St) ->
-    _ = mind_journal:append(Did, stimulus_declined_v1, #{reason => Reason}),
-    _ = catch memory:observe(Did, unheard(mget(body, Fact))),
+resume(St) ->
+    settle(step(St)).
+
+settle(#st{busy = true} = St)                       -> St;
+settle(#st{hold_timer = T} = St) when T =/= undefined -> St;
+settle(St)                                          -> resume(St).
+
+step(#st{held = Held} = St) ->
+    {Next, Rest, Expired} = pop_held(Held, now_ms()),
+    St1 = lists:foldl(fun(F, S) -> let_go(expired_hold, F, S) end, St#st{held = Rest}, Expired),
+    take_up(Next, St1).
+
+take_up(none, St) -> St;
+take_up(Fact, St) -> consider(peer, Fact, St).
+
+resume_later(#st{hold_timer = undefined, last_replied = Last} = St) ->
+    Wait = max(1000, reply_cooldown_ms() - (now_ms() - Last)),
+    St#st{hold_timer = erlang:send_after(Wait, self(), resume_held)};
+resume_later(St) ->
     St.
+
+%% --- hearing a post once ---
+
+-spec heard_new() -> {queue:queue(), sets:set()}.
+heard_new() ->
+    {queue:new(), sets:new([{version, 2}])}.
+
+-spec heard_has(binary() | undefined, {queue:queue(), sets:set()}) -> boolean().
+heard_has(undefined, _Heard)  -> false;
+heard_has(Id, {_Order, Set}) -> sets:is_element(Id, Set).
+
+-spec heard_add(binary() | undefined, {queue:queue(), sets:set()}) -> {queue:queue(), sets:set()}.
+heard_add(undefined, Heard) ->
+    Heard;
+heard_add(Id, {Order, Set}) ->
+    forget_oldest({queue:in(Id, Order), sets:add_element(Id, Set)}).
+
+forget_oldest({Order, Set} = Heard) ->
+    forget(queue:len(Order) > ?HEARD_MAX, Heard, Set).
+
+forget(false, Heard, _Set) ->
+    Heard;
+forget(true, {Order, _}, Set) ->
+    {{value, Oldest}, Rest} = queue:out(Order),
+    {Rest, sets:del_element(Oldest, Set)}.
+
+remember_heard(Id, #st{heard = Heard} = St) ->
+    St#st{heard = heard_add(Id, Heard)}.
+
+post_id(Fact) ->
+    id_or_none(mget(post_id, Fact)).
+
+id_or_none(Id) when is_binary(Id), Id =/= <<>> -> Id;
+id_or_none(_NoId)                              -> undefined.
+
+now_ms() ->
+    erlang:system_time(millisecond).
 
 %% Whether THIS mind should close THIS story now: it is the synthesizer, the
 %% story is real, and nobody has closed it yet.
@@ -374,8 +580,8 @@ close_with(Thread, Stimulus, _Did, St) when is_list(Thread), Thread =/= [] ->
     %% Reasoned like any other turn, but from a different brief and marked on
     %% the way out (`kind = synthesis'), so a reader and a consumer can both
     %% tell a conclusion from another opinion without parsing prose.
-    react({ok, closing_brief(Thread, Stimulus)}, #{}, St#st{stimulus = Stimulus,
-                                                           kind = synthesis});
+    start_turn(closing_brief(Thread, Stimulus), closing, #{},
+               St#st{stimulus = Stimulus, kind = synthesis});
 close_with(_NoThread, _Stimulus, _Did, St) ->
     St.
 
@@ -454,47 +660,91 @@ run_reasoning(Self, Did, Message, Messages, Tools) ->
             Self ! {reasoning_failed, Why}
     end.
 
-%% Decide, cheaply and BEFORE spending a Melious call, whether a fact is worth
-%% reasoning about. A mind ignores its own speech (it hears the agora, where its
-%% own posts return), and reasons at most once per cooldown so a lively square
-%% cannot spiral into a token-burn loop. Its own PASS-judgment handles the rest.
-stimulus(Fact, #st{did = Did, last_reasoned = Last}) ->
-    decide(Fact, Did, Last, erlang:system_time(millisecond), cooldown_ms()).
+%% --- the gate: what kind of thing was heard, and whether to reason about it ---
 
-%% Pure so it can be tested without a live mind. Exported for that reason.
-%% The decline carries its REASON, because the three cases are not the same thing:
-%% own speech was never missed, an empty body is nothing, but a stimulus declined
-%% on cooldown is real input the mind never saw and must still record.
--spec decide(map(), binary(), integer(), integer(), integer()) ->
-    {ok, binary()} | {declined, own_speech | cooldown | empty | thread_full}.
-decide(Fact, MyDid, LastReasoned, Now, Cooldown) ->
-    decide(Fact, MyDid, LastReasoned, Now, Cooldown, thread_room(Fact)).
+-type kind() :: own | replay | peer | opening | other | closing.
+-type gate() :: #{kind := kind(), now := integer(),
+                  last_opened := integer(), last_replied := integer(),
+                  cooldown := pos_integer(), reply_cooldown := pos_integer(),
+                  room := boolean()}.
 
-%% @doc The same decision with the thread's remaining room passed in, so the
-%% whole gate stays pure and testable without a live feed.
--spec decide(map(), binary(), integer(), integer(), integer(), boolean()) ->
-    {ok, binary()} | {declined, own_speech | cooldown | empty | thread_full}.
-decide(Fact, MyDid, LastReasoned, Now, Cooldown, Room) ->
-    heard(mget(from, Fact) =:= MyDid, Fact, Now - LastReasoned >= Cooldown, Room).
+%% @doc What a fact is to this mind. Pure; `Now' is passed in so history can
+%% be told from speech without a clock.
+%%
+%% `own' is its own post coming back round the agora. `replay' is a peer's
+%% post being said again (flagged by the republisher, or simply old enough
+%% that it cannot be live speech). `peer' is a peer's fresh post. `opening'
+%% is a sensor fact that opens a story (it carries a stimulus). `other' is
+%% everything else: a broadcast, a self-alert, an empty map.
+-spec kind_of(term(), binary(), integer()) -> kind().
+kind_of(Fact, MyDid, Now) when is_map(Fact) ->
+    classify(mget(from, Fact) =:= MyDid, post_id(Fact), Fact, Now);
+kind_of(_NotAMap, _MyDid, _Now) ->
+    other.
 
-heard(true, _Fact, _Ready, _Room) ->
+classify(true, _PostId, _Fact, _Now) ->
+    own;
+classify(false, undefined, Fact, _Now) ->
+    opening_or_other(agora_stimulus:of_fact(Fact));
+classify(false, _PostId, Fact, Now) ->
+    peer_or_replay(replayed(mget(replay, Fact)) orelse stale(mget(posted_at, Fact), Now)).
+
+opening_or_other(undefined) -> other;
+opening_or_other(_Stimulus) -> opening.
+
+peer_or_replay(true)  -> replay;
+peer_or_replay(false) -> peer.
+
+%% No booleans on the wire: the republisher marks history with `replay => 1'.
+replayed(1)    -> true;
+replayed(true) -> true;
+replayed(_)    -> false.
+
+stale(At, Now) when is_integer(At) -> Now - At > ?HISTORY_MS;
+stale(_NoTime, _Now)               -> false.
+
+gate(Kind, Fact, #st{last_opened = Opened, last_replied = Replied}) ->
+    #{kind => Kind, now => now_ms(),
+      last_opened => Opened, last_replied => Replied,
+      cooldown => cooldown_ms(), reply_cooldown => reply_cooldown_ms(),
+      room => thread_room(Fact)}.
+
+%% @doc Decide, cheaply and BEFORE spending an LLM call, whether a fact is
+%% worth reasoning about. Pure so it can be tested without a live mind.
+%%
+%% The decline carries its REASON, because the cases are not the same thing:
+%% own speech was never missed, history was already heard, an empty body is
+%% nothing, a full thread is the synthesizer's cue, a peer on the reply clock
+%% is kept for later, and an opening declined on cooldown is real input the
+%% mind never saw and must still record.
+-spec decide(map(), gate()) ->
+    {ok, binary()} |
+    {declined, own_speech | replay | empty | thread_full | reply_cooldown | cooldown}.
+decide(_Fact, #{kind := own}) ->
     {declined, own_speech};
-heard(false, Fact, Ready, Room) ->
-    consider(mget(body, Fact), Ready, Room).
+decide(_Fact, #{kind := replay}) ->
+    {declined, replay};
+decide(Fact, Gate) ->
+    weigh(mget(body, Fact), Gate).
 
 %% BOUNDED THREADS. A story the society has already answered enough times is
 %% closed to further reaction, which is the forward pressure the square has
 %% never had: without a cap nothing ever ENDS, and a page of forty openings
 %% with no endings is what the record looked like. The cap is checked before
-%% the cooldown so a mind whose turn is up is not spent on a full thread.
-consider(Body, _Ready, false) when is_binary(Body), Body =/= <<>> ->
+%% either clock so a mind whose turn is up is not spent on a full thread.
+weigh(Body, _Gate) when not is_binary(Body); Body =:= <<>> ->
+    {declined, empty};
+weigh(_Body, #{room := false}) ->
     {declined, thread_full};
-consider(Body, true, _Room) when is_binary(Body), Body =/= <<>> ->
+weigh(Body, #{kind := peer, now := Now, last_replied := Last, reply_cooldown := Wait})
+  when Now - Last >= Wait ->
     {ok, Body};
-consider(Body, false, _Room) when is_binary(Body), Body =/= <<>> ->
-    {declined, cooldown};
-consider(_Body, _Ready, _Room) ->
-    {declined, empty}.
+weigh(_Body, #{kind := peer}) ->
+    {declined, reply_cooldown};
+weigh(Body, #{now := Now, last_opened := Last, cooldown := Wait}) when Now - Last >= Wait ->
+    {ok, Body};
+weigh(_Body, _OnCooldown) ->
+    {declined, cooldown}.
 
 %% Whether this story still has room for another voice.
 %%
@@ -544,6 +794,20 @@ parse_cooldown(S) ->
         {I, _} when is_integer(I), I > 0 -> I;
         _NotPositiveInt                  -> ?DEFAULT_COOLDOWN_MS
     end.
+
+%% @doc How long after answering a peer a mind may answer one again.
+%% Env-driven per node (HECATE_MIND_REPLY_COOLDOWN_MS), else app-env
+%% `mind_reply_cooldown_ms', else thirty seconds.
+-spec reply_cooldown_ms() -> pos_integer().
+reply_cooldown_ms() ->
+    case os:getenv("HECATE_MIND_REPLY_COOLDOWN_MS") of
+        V when is_list(V), V =/= "" -> parse_reply_cooldown(string:to_integer(V));
+        _Unset -> application:get_env(hecate_spartan, mind_reply_cooldown_ms,
+                                      ?DEFAULT_REPLY_COOLDOWN_MS)
+    end.
+
+parse_reply_cooldown({I, _}) when is_integer(I), I > 0 -> I;
+parse_reply_cooldown(_NotPositiveInt)                  -> ?DEFAULT_REPLY_COOLDOWN_MS.
 
 %% --- the 4-layer context ---
 
@@ -659,7 +923,7 @@ apply_tool_calls(ToolCalls, St) ->
 apply_tool_call(Call, #st{name = Name, did = Did, priv = Priv, pub = Pub,
                           stimulus = Stimulus} = St) ->
     Ctx = #{did => Did, priv => Priv, pub => Pub, stimulus => Stimulus,
-            kind => St#st.kind},
+            kind => St#st.kind, replying_to => St#st.replying_to},
     case mind_tools:execute(Call, Ctx) of
         {ok, Effect} ->
             apply_effect(Effect, St);

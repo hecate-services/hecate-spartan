@@ -15,15 +15,20 @@
 -behaviour(gen_server).
 
 -export([start_link/0]).
+-export([history/1]).   %% a republished post, marked, pure, exported for tests
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2, terminate/2]).
 
 -define(RESUB_MS, 5_000).
 %% Re-publish this node's recent public speech on a timer, exactly as the
 %% registry re-announces its entities. A mesh fact is published ONCE, live, so
-%% anything listening later hears nothing: a spectator that restarts (or one
-%% that connects for the first time) shows an empty square even though the
-%% society has been talking for hours. The square is public and the posts are in
-%% our log, so we say them again. Everyone dedups by post_id, so this is cheap.
+%% anything listening later hears nothing: an instance that restarts (or joins
+%% for the first time) has an empty square even though the society has been
+%% talking for hours, and its thread counts and novelty gate would start from
+%% nothing. So we say our recent posts again, MARKED AS HISTORY (`replay => 1',
+%% see history/1): a square fills from them, a keeper dedupes them by post_id,
+%% and a mind must never mistake them for speech. Before the mark, every mind
+%% heard every peer post about forty times (2026-09-03) and the one turn its
+%% cooldown allowed went to whichever copy arrived first.
 -define(REPUBLISH_MS, 60_000).
 -define(REPUBLISH_N, 25).
 %% A re-published post is HISTORY, not news. Deliver only fresh speech into the
@@ -133,9 +138,15 @@ publish_each(Pool, Realm, Posts) ->
     lists:foreach(
       fun(P) ->
           catch macula:publish(Pool, Realm, hecate_spartan_society:agora(),
-                               maybe_publish_to_agora:fact(P))
+                               history(maybe_publish_to_agora:fact(P)))
       end, Posts),
     ok.
+
+%% @doc A post as it is said AGAIN: the same fact, marked so a listener can
+%% tell history from speech. No booleans on the wire, so the mark is 1.
+-spec history(map()) -> map().
+history(Fact) ->
+    Fact#{replay => 1}.
 
 deliver_to_local_minds(#{post_id := Id, from := From} = Post) ->
     Msg = #{msg_id  => Id,

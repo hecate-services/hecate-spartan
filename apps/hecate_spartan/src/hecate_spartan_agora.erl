@@ -5,11 +5,12 @@
 %%% `federation_agora'), keyed by post_id. Queries read it directly; the realm
 %%% renders it.
 %%%
-%%% In-memory, so it rebuilds this node's OWN posts from the log at boot (see
-%%% `agora_post_published_v1:replay/0'); peers' posts return as they re-arrive
-%%% on the mesh. The square is a feed, not the archive: it keeps a recent window
-%%% and the event log keeps everything, which is the point of recording public
-%%% speech as events in the first place.
+%%% In-memory and store-free (docs/PLAN_RIP_ES.md): there is no log to rebuild
+%%% from, so after a restart the window fills again from what peers say and
+%%% from what they say AGAIN -- `federation_agora' republishes each instance's
+%%% recent posts once a minute, marked as history. The square is a feed, not
+%%% the archive: it keeps a recent window, and the keeper (hecate-agora) keeps
+%%% everything.
 -module(hecate_spartan_agora).
 -behaviour(gen_server).
 
