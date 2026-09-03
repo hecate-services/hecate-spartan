@@ -41,9 +41,17 @@ the_republisher_marks_history_and_a_mind_treats_it_so_test() ->
 an_old_post_is_history_even_without_the_mark_test() ->
     ?assertEqual(replay, spartan_mind:kind_of(peer_post(<<"p1">>, <<"s1">>, ?NOW - 3_600_000), ?ME, ?NOW)).
 
-own_speech_is_own_whatever_else_it_carries_test() ->
-    Mine = (peer_post(<<"p1">>, <<"s1">>, ?NOW - 3_600_000))#{from => ?ME},
+own_fresh_speech_is_own_test() ->
+    Mine = (peer_post(<<"p1">>, <<"s1">>, ?NOW - 1000))#{from => ?ME},
     ?assertEqual(own, spartan_mind:kind_of(Mine, ?ME, ?NOW)).
+
+%% A mind's own post said again by its republisher is history like anyone
+%% else's: there is one of those a minute per post, and none is an event.
+own_speech_said_again_is_history_test() ->
+    Mine = (peer_post(<<"p1">>, <<"s1">>, ?NOW - 1000))#{from => ?ME},
+    ?assertEqual(replay, spartan_mind:kind_of(federation_agora:history(Mine), ?ME, ?NOW)),
+    Old = (peer_post(<<"p1">>, <<"s1">>, ?NOW - 3_600_000))#{from => ?ME},
+    ?assertEqual(replay, spartan_mind:kind_of(Old, ?ME, ?NOW)).
 
 a_sensor_fact_opens_a_story_test() ->
     ?assertEqual(opening, spartan_mind:kind_of(news(<<"s1">>), ?ME, ?NOW)).

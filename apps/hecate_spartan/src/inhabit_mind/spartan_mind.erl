@@ -682,18 +682,23 @@ kind_of(Fact, MyDid, Now) when is_map(Fact) ->
 kind_of(_NotAMap, _MyDid, _Now) ->
     other.
 
-classify(true, _PostId, _Fact, _Now) ->
-    own;
-classify(false, undefined, Fact, _Now) ->
-    opening_or_other(agora_stimulus:of_fact(Fact));
-classify(false, _PostId, Fact, Now) ->
-    peer_or_replay(replayed(mget(replay, Fact)) orelse stale(mget(posted_at, Fact), Now)).
+%% History is history whoever said it: a mind's OWN post said again by its
+%% instance's republisher is not worth a journal line either, and there is
+%% one of those a minute for every post in the window.
+classify(Mine, undefined, Fact, _Now) ->
+    unposted(Mine, Fact);
+classify(Mine, _PostId, Fact, Now) ->
+    posted(Mine, replayed(mget(replay, Fact)) orelse stale(mget(posted_at, Fact), Now)).
+
+unposted(true, _Fact) -> own;
+unposted(false, Fact) -> opening_or_other(agora_stimulus:of_fact(Fact)).
+
+posted(_Mine, true)  -> replay;
+posted(true, false)  -> own;
+posted(false, false) -> peer.
 
 opening_or_other(undefined) -> other;
 opening_or_other(_Stimulus) -> opening.
-
-peer_or_replay(true)  -> replay;
-peer_or_replay(false) -> peer.
 
 %% No booleans on the wire: the republisher marks history with `replay => 1'.
 replayed(1)    -> true;
